@@ -42,7 +42,7 @@ jobs:
             }
           }
           Write-Host "Building PoolForge Version: $ver"
-          "VERSION=$ver" >> $env:GITHUB_ENV
+          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$ver"
 
       - name: Build Release Binary
         shell: pwsh
@@ -55,7 +55,7 @@ jobs:
           $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
           if (Test-Path $wixPath) {
             Write-Host "Found WiX v3.11 at $wixPath"
-            "$wixPath" >> $env:GITHUB_PATH
+            Add-Content -Path $env:GITHUB_PATH -Value $wixPath
           } else {
             Write-Host "WiX not in default directory, checking PATH or installing..."
             choco install wixtoolset -y
@@ -69,7 +69,7 @@ jobs:
       - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PoolForge-${{ env:VERSION }}-Setup
+          name: PoolForge-${{ env.VERSION }}-Setup
           path: target/installer/*.msi
           if-no-files-found: error
 
