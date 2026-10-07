@@ -1,0 +1,83 @@
+name: Build and Release PoolForge
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-package:
+    name: Build Binary & MSI Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Determine Version
+        id: get_version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $ver = $env:GITHUB_REF.Substring(11)
+          } else {
+            $cargoToml = Get-Content Cargo.toml -Raw
+            if ($cargoToml -match 'version\s*=\s*"([^"]+)"') {
+              $ver = $matches[1]
+            } else {
+              $ver = "0.1.0"
+            }
+          }
+          Write-Host "Building PoolForge Version: $ver"
+          "VERSION=$ver" >> $env:GITHUB_ENV
+
+      - name: Build Release Binary
+        shell: pwsh
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Add WiX Toolset to PATH
+        shell: pwsh
+        run: |
+          $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
+          if (Test-Path $wixPath) {
+            Write-Host "Found WiX v3.11 at $wixPath"
+            "$wixPath" >> $env:GITHUB_PATH
+          } else {
+            Write-Host "WiX not in default directory, checking PATH or installing..."
+            choco install wixtoolset -y
+          }
+
+      - name: Build MSI Installer
+        shell: pwsh
+        run: |
+          .\wix\build_msi.ps1 -Version $env:VERSION -SourceDir "target\x86_64-pc-windows-msvc\release" -OutputDir "target\installer"
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PoolForge-${{ env:VERSION }}-Setup
+          path: target/installer/*.msi
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/installer/*.msi
+          generate_release_notes: true
+          draft: false
+          prerelease: false

@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PoolForge - Windows Storage Pool Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <img src="/logo.png" alt="PoolForge Logo" class="brand-logo-img">
+                <div class="brand-text">
+                    <span class="title">PoolForge</span>
+                    <span class="version-tag">PRO</span>
+                </div>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="overview">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    <span>Overview & Disks</span>
+                </button>
+                <button class="nav-item" data-tab="replication">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="17 1 21 5 17 9"></polyline>
+                        <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                        <polyline points="7 23 3 19 7 15"></polyline>
+                        <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                    </svg>
+                    <span>Folder Replication</span>
+                </button>
+                <button class="nav-item" data-tab="balancer">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                    <span>Drive Balancer</span>
+                </button>
+                <button class="nav-item" data-tab="explorer">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span>Pool Explorer</span>
+                </button>
+                <button class="nav-item" data-tab="service">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <span>Service Control</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="pool-mount-badge">
+                    <span class="dot pulse"></span>
+                    <span id="sidebar-mount-text">Mount: V:\</span>
+                </div>
+                <div class="driver-tag">WinFsp Kernel VFS</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header Bar -->
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 id="page-title">Pool Overview</h1>
+                    <p class="subtitle">Virtual storage aggregate with file-level duplication & automatic balancing</p>
+                </div>
+                <div class="header-actions">
+                    <div class="update-badge" id="update-badge" style="display: none;" onclick="openUpdateModal()" title="New PoolForge version available">
+                        <span class="update-dot"></span>
+                        <span>Update: <strong id="update-badge-ver">v0.0</strong></span>
+                    </div>
+                    <div class="status-chip" id="global-status-chip">
+                        <span class="chip-dot"></span>
+                        <span id="global-status-text">Healthy</span>
+                    </div>
+                    <button class="btn btn-outline" id="btn-refresh" title="Refresh stats">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                        Refresh
+                    </button>
+                    <button class="btn btn-primary" id="btn-mount-toggle">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="2" width="20" height="8" rx="2"></rect>
+                            <rect x="2" y="14" width="20" height="8" rx="2"></rect>
+                            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                        </svg>
+                        <span id="mount-toggle-text">Mount Drive (V:)</span>
+                    </button>
+                    <button class="btn btn-outline" id="btn-logout" style="display: none;" onclick="handleLogout()" title="Log out">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                        <span>Lock</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Tab 1: Overview & Disks -->
+            <section class="tab-pane active" id="tab-overview">
+                <!-- Metrics Grid -->
+                <div class="metrics-grid">
+                    <div class="metric-card glow-card">
+                        <div class="metric-header">
+                            <span class="metric-label">Total Pooled Space</span>
+                            <span class="metric-icon blue">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                            </span>
+                        </div>
+                        <div class="metric-value" id="val-total-space">0.00 TB</div>
+                        <div class="metric-sub" id="val-space-breakdown">0.00 TB Used / 0.00 TB Free</div>
+                        <div class="storage-bar">
+                            <div class="storage-fill" id="bar-pool-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-label">Member Disks</span>
+                            <span class="metric-icon purple">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect></svg>
+                            </span>
+                        </div>
+                        <div class="metric-value" id="val-disk-count">0 Drives</div>
+                        <div class="metric-sub" id="val-disk-sub">No striping &bull; 100% Native NTFS</div>
+                        <div class="metric-footer-badge green">All Disks Online</div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-label">Duplication Health</span>
+                            <span class="metric-icon green">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                            </span>
+                        </div>
+                        <div class="metric-value" id="val-duplication-health">100% Protected</div>
+                        <div class="metric-sub" id="val-files-count">0 Files Indexed</div>
+                        <div class="metric-footer-badge" id="badge-scrub-status">Scrub Idle</div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-label">Pool Balance Variance</span>
+                            <span class="metric-icon amber">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                            </span>
+                        </div>
+                        <div class="metric-value" id="val-balance-variance">0.0%</div>
+                        <div class="metric-sub" id="val-balance-status">Drives Balanced</div>
+                        <div class="metric-footer-badge blue">Auto-Balance Ready</div>
+                    </div>
+                </div>
+
+                <!-- Member Disks Section -->
+                <div class="content-section">
+                    <div class="section-header">
+                        <div>
+                            <h2>Member Physical Disks</h2>
+                            <p class="section-desc">Each disk holds whole files inside a PoolData folder. Files are 100% readable without the pool.</p>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-open-add-drive">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            Add Drive to Pool
+                        </button>
+                    </div>
+
+                    <div class="drives-grid" id="drives-container">
+                        <!-- Drives will be rendered dynamically -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 2: Folder Replication -->
+            <section class="tab-pane" id="tab-replication">
+                <div class="content-section">
+                    <div class="section-header">
+                        <div>
+                            <h2>Per-Folder Duplication Rules</h2>
+                            <p class="section-desc">Choose which folders to duplicate across multiple physical disks and specify exact replica counts.</p>
+                        </div>
+                        <div class="button-group">
+                            <button class="btn btn-outline" id="btn-trigger-scrub">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                Audit & Resilver Replicas
+                            </button>
+                            <button class="btn btn-primary" id="btn-open-add-rule">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                New Duplication Rule
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Global Default Setting -->
+                    <div class="card default-replication-card">
+                        <div class="def-info">
+                            <h3>Default Pool Duplication</h3>
+                            <p>Files in folders without an explicit rule will inherit this replica count.</p>
+                        </div>
+                        <div class="def-controls">
+                            <button class="replica-pill" data-default="1">1x (No Duplication)</button>
+                            <button class="replica-pill active" data-default="2">2x (Double Redundancy)</button>
+                            <button class="replica-pill" data-default="3">3x (Triple Redundancy)</button>
+                        </div>
+                    </div>
+
+                    <!-- Rules Table -->
+                    <div class="card table-card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Folder Pattern</th>
+                                    <th>Target Copies</th>
+                                    <th>Disks Required</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rules-table-body">
+                                <!-- Rules rendered dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Duplication Engine Queue Card -->
+                    <div class="card queue-status-card">
+                        <div class="queue-header">
+                            <h3>Duplication Engine Status</h3>
+                            <span class="badge" id="badge-queue-active">Queue Idle</span>
+                        </div>
+                        <div class="queue-stats">
+                            <div class="q-stat">
+                                <span class="q-val" id="val-queue-size">0</span>
+                                <span class="q-label">Queued Files</span>
+                            </div>
+                            <div class="q-stat">
+                                <span class="q-val" id="val-completed-reps">0</span>
+                                <span class="q-label">Completed Replications</span>
+                            </div>
+                            <div class="q-stat">
+                                <span class="q-val" id="val-replicated-gb">0 GB</span>
+                                <span class="q-label">Data Duplicated</span>
+                            </div>
+                            <div class="q-stat">
+                                <span class="q-val" id="val-under-rep-files">0</span>
+                                <span class="q-label">Under-Replicated Files</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 3: Drive Balancer -->
+            <section class="tab-pane" id="tab-balancer">
+                <div class="content-section">
+                    <div class="section-header">
+                        <div>
+                            <h2>Drive Balancing Engine</h2>
+                            <p class="section-desc">Keep your drives evenly utilized without striping. Whole files are safely migrated between disks while strictly enforcing replica separation.</p>
+                        </div>
+                        <div class="button-group">
+                            <button class="btn btn-primary" id="btn-start-balance">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                Balance Now
+                            </button>
+                            <button class="btn btn-outline" id="btn-stop-balance">Stop</button>
+                        </div>
+                    </div>
+
+                    <div class="balancer-dashboard">
+                        <!-- Strategy & Controls Card -->
+                        <div class="card balancer-settings-card">
+                            <h3>Balancing Strategy</h3>
+                            <div class="strategy-options">
+                                <label class="radio-option">
+                                    <input type="radio" name="strategy" value="equalize_percentage" checked>
+                                    <div class="radio-content">
+                                        <span class="title">Equalize Used Percentage (Recommended)</span>
+                                        <span class="desc">Distributes files so all member drives maintain an equal percentage of used space (e.g., all drives ~65% full).</span>
+                                    </div>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="strategy" value="equalize_free_space">
+                                    <div class="radio-content">
+                                        <span class="title">Equalize Absolute Free Space</span>
+                                        <span class="desc">Distributes files so every drive has the exact same amount of free gigabytes remaining.</span>
+                                    </div>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="strategy" value="sequential_fill">
+                                    <div class="radio-content">
+                                        <span class="title">Sequential Fill</span>
+                                        <span class="desc">Fills disks sequentially up to 90% before placing data onto the next disk.</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Balancer Live Status Card -->
+                        <div class="card balancer-live-card">
+                            <h3>Live Balancing Progress</h3>
+                            <div class="live-status-box">
+                                <div class="live-meta">
+                                    <span class="live-state" id="bal-state-text">Idle</span>
+                                    <span class="live-speed" id="bal-speed-text">0.0 MB/s</span>
+                                </div>
+                                <div class="storage-bar large">
+                                    <div class="storage-fill blue" id="bal-progress-fill" style="width: 0%;"></div>
+                                </div>
+                                <div class="current-file-text" id="bal-file-text">No active file migration</div>
+                            </div>
+
+                            <div class="balance-metrics-row">
+                                <div class="b-box">
+                                    <span class="b-val" id="bal-total-files">0</span>
+                                    <span class="b-lbl">Files Moved</span>
+                                </div>
+                                <div class="b-box">
+                                    <span class="b-val" id="bal-total-bytes">0 GB</span>
+                                    <span class="b-lbl">Data Migrated</span>
+                                </div>
+                                <div class="b-box">
+                                    <span class="b-val" id="bal-variance-metric">0.0%</span>
+                                    <span class="b-lbl">Pool Imbalance</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visual Drive Utilization Chart -->
+                    <div class="card chart-card">
+                        <h3>Drive Utilization Distribution</h3>
+                        <p class="chart-desc">Compares each drive's fill percentage against the target pool average.</p>
+                        <div class="utilization-bars-container" id="balancer-utilization-container">
+                            <!-- Visual bars dynamically rendered -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 4: Pool Explorer -->
+            <section class="tab-pane" id="tab-explorer">
+                <div class="content-section">
+                    <div class="section-header">
+                        <div>
+                            <h2>Virtual Pool Explorer</h2>
+                            <p class="section-desc">Merged filesystem view. Inspect which physical drives hold copies of each file.</p>
+                        </div>
+                        <div class="path-breadcrumbs" id="explorer-breadcrumbs">
+                            <span class="crumb active" data-path="/">/ (Pool Root)</span>
+                        </div>
+                    </div>
+
+                    <div class="card table-card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Size</th>
+                                    <th>Replication</th>
+                                    <th>Physical Disks</th>
+                                    <th>Modified</th>
+                                </tr>
+                            </thead>
+                            <tbody id="explorer-table-body">
+                                <tr><td colspan="6" class="text-center">Loading pool directories...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 5: Service Control -->
+            <section class="tab-pane" id="tab-service">
+                <div class="content-section">
+                    <div class="section-header">
+                        <div>
+                            <h2>Windows Service & Driver Control</h2>
+                            <p class="section-desc">Manage the background daemon, SCM registration, and WinFsp filesystem driver integration.</p>
+                        </div>
+                    </div>
+
+                    <div class="service-cards-grid">
+                        <div class="card">
+                            <h3>Windows Service Daemon</h3>
+                            <p class="card-desc">The background service automatically boots on Windows startup, mounts the pooled drive, and handles real-time replication.</p>
+                            <div class="info-list">
+                                <div class="info-row">
+                                    <span class="info-key">Service Name:</span>
+                                    <span class="info-val">PoolForgeService</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-key">Startup Mode:</span>
+                                    <span class="info-val">Automatic (LocalSystem)</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-key">Status:</span>
+                                    <span class="info-val text-green">Active (Running)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Virtual Filesystem Engine</h3>
+                            <p class="card-desc">Powered by WinFsp user-mode kernel driver proxy with zero striping overhead.</p>
+                            <div class="info-list">
+                                <div class="info-row">
+                                    <span class="info-key">Driver:</span>
+                                    <span class="info-val">WinFsp 2025 (winfsp-x64.sys)</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-key">Storage Architecture:</span>
+                                    <span class="info-val">Single-file whole persistence</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-key">Replication Policy:</span>
+                                    <span class="info-val">Strict physical segregation</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal: Add Drive -->
+    <div class="modal-backdrop" id="modal-add-drive">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Add Drive to Storage Pool</h3>
+                <button class="btn-close" id="modal-close-add-drive">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Select an available Windows volume. A hidden <code>PoolData.&lt;pool-id&gt;</code> folder will be created. Existing data on this drive is never deleted!</p>
+                <div class="available-drives-list" id="modal-available-drives">
+                    <!-- Available drives rendered here -->
+                </div>
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="chk-landing-zone">
+                        <span>Use as fast Landing Zone / SSD Cache (writes go here first)</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Add Rule -->
+    <div class="modal-backdrop" id="modal-add-rule">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>New Folder Duplication Rule</h3>
+                <button class="btn-close" id="modal-close-add-rule">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="input-rule-path">Relative Folder Path</label>
+                    <input type="text" id="input-rule-path" class="input-field" placeholder="/Photos or /Backups/Critical">
+                </div>
+                <div class="form-group">
+                    <label for="select-rule-count">Replica Count</label>
+                    <select id="select-rule-count" class="select-field">
+                        <option value="1">1x - Single Copy (No Duplication)</option>
+                        <option value="2" selected>2x - Two Distinct Disks (Double Redundancy)</option>
+                        <option value="3">3x - Three Distinct Disks (High Resilience)</option>
+                        <option value="4">4x - Four Distinct Disks (Maximum Resilience)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="input-rule-desc">Description</label>
+                    <input type="text" id="input-rule-desc" class="input-field" placeholder="Family photos redundant across disks">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-outline" id="btn-cancel-rule">Cancel</button>
+                    <button class="btn btn-primary" id="btn-save-rule">Save Rule</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: First-Time Auth Setup Wizard -->
+    <div class="modal-backdrop" id="modal-auth-setup" style="z-index: 9999;">
+        <div class="modal-card" style="max-width: 440px;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img src="/logo.png" alt="PoolForge" class="modal-brand-logo">
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px;">Welcome to PoolForge</h3>
+                        <p style="margin: 0; font-size: 12px; color: var(--text-secondary);">First-Time Administrator Setup</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc" style="margin-bottom: 16px;">Set an Administrator password to protect your storage dashboard and REST APIs across the local network.</p>
+                <div class="form-group">
+                    <label for="input-setup-password">Admin Password</label>
+                    <input type="password" id="input-setup-password" class="input-field" placeholder="Enter password (min 4 chars)" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label for="input-setup-confirm">Confirm Password</label>
+                    <input type="password" id="input-setup-confirm" class="input-field" placeholder="Re-enter password" autocomplete="new-password">
+                </div>
+                <div id="setup-error-msg" style="color: var(--accent-amber); font-size: 12px; margin-bottom: 12px; display: none;"></div>
+                <div class="modal-actions" style="margin-top: 20px;">
+                    <button class="btn btn-primary" id="btn-submit-setup" style="width: 100%; justify-content: center;" onclick="submitSetupPassword()">Save Password & Enter Dashboard</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Login Screen -->
+    <div class="modal-backdrop" id="modal-auth-login" style="z-index: 9999;">
+        <div class="modal-card" style="max-width: 400px;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img src="/logo.png" alt="PoolForge" class="modal-brand-logo">
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px;">PoolForge Access</h3>
+                        <p style="margin: 0; font-size: 12px; color: var(--text-secondary);">Administrator Authentication</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc" style="margin-bottom: 16px;">This dashboard is password protected. Enter your credentials to continue.</p>
+                <div class="form-group">
+                    <label for="input-login-password">Password</label>
+                    <input type="password" id="input-login-password" class="input-field" placeholder="Administrator password" autocomplete="current-password" onkeydown="if(event.key==='Enter') submitLogin()">
+                </div>
+                <div id="login-error-msg" style="color: var(--accent-amber); font-size: 12px; margin-bottom: 12px; display: none;"></div>
+                <div class="modal-actions" style="margin-top: 20px;">
+                    <button class="btn btn-primary" id="btn-submit-login" style="width: 100%; justify-content: center;" onclick="submitLogin()">Sign In</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Update Available -->
+    <div class="modal-backdrop" id="modal-update">
+        <div class="modal-card" style="max-width: 520px;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 24px;">🚀</span>
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px;">Software Update Available</h3>
+                        <p style="margin: 0; font-size: 12px; color: var(--accent-indigo);" id="update-modal-ver-text">PoolForge v0.0 is ready to install</p>
+                    </div>
+                </div>
+                <button class="btn-close" id="modal-close-update" onclick="closeUpdateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="update-info-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px;">
+                    <div>
+                        <span style="font-size: 11px; color: var(--text-muted); display: block;">Installed Version</span>
+                        <strong id="update-installed-ver" style="font-size: 14px;">v0.1.0</strong>
+                    </div>
+                    <div>
+                        <span style="font-size: 11px; color: var(--text-muted); display: block;">Latest Release</span>
+                        <strong id="update-latest-ver" style="font-size: 14px; color: var(--accent-green);">v0.2.0</strong>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Release Notes</label>
+                    <div id="update-release-notes" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; max-height: 180px; overflow-y: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap;"></div>
+                </div>
+                <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: space-between;">
+                    <button class="btn btn-outline" onclick="checkUpdatesNow()" id="btn-check-updates-now">Check Again</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-outline" onclick="closeUpdateModal()">Later</button>
+                        <a href="#" target="_blank" class="btn btn-primary" id="btn-download-update" style="text-decoration: none;">Download MSI Installer</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>

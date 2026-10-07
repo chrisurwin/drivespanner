@@ -1,0 +1,28 @@
+[package]
+name = "poolforge"
+version = "0.1.0"
+edition = "2021"
+authors = ["PoolForge Contributors"]
+description = "High-performance Windows Storage Pool service with folder replication and drive balancing"
+
+[dependencies]
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "sync", "net", "time", "io-util", "signal"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Services",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_Security"
+] }
+libc = "0.2"
+log = "0.4"
+
+walkdir = "2.5"
+

@@ -1,0 +1,69 @@
+{
+  "pool_id": "59d767eb-1a22-4892-9a02-229150be8170",
+  "pool_name": "PoolForge Storage",
+  "mount_point": "V:",
+  "member_drives": [
+    {
+      "id": "17040e49-47f4-4435-b8e2-857cc4b5b724",
+      "drive_path": "d:\\mock_drives\\disk1",
+      "pooldata_name": "PoolData.59d767eb-1a22-4892-9a02-229150be8170",
+      "enabled": true,
+      "read_only": false,
+      "is_landing_zone": false
+    },
+    {
+      "id": "a12b7b10-3b89-4073-b1dc-7b2d0e44e6a7",
+      "drive_path": "d:\\mock_drives\\disk2",
+      "pooldata_name": "PoolData.59d767eb-1a22-4892-9a02-229150be8170",
+      "enabled": true,
+      "read_only": false,
+      "is_landing_zone": false
+    }
+  ],
+  "replication": {
+    "default_replicas": 1,
+    "rules": [
+      {
+        "id": "a21c55f1-3fa6-46db-9930-d54ff16a59d5",
+        "path_pattern": "/Documents",
+        "replica_count": 2,
+        "enabled": true,
+        "description": "Important documents duplicated across 2 disks"
+      },
+      {
+        "id": "98b34184-c2f3-41a4-835f-89d871948ce6",
+        "path_pattern": "/Family Photos",
+        "replica_count": 3,
+        "enabled": true,
+        "description": "Family photos replicated across 3 disks"
+      },
+      {
+        "id": "a109e604-1e8c-4736-838e-0a9f3060442a",
+        "path_pattern": "/Projects",
+        "replica_count": 2,
+        "enabled": true,
+        "description": "Critical code projects duplicated 2x"
+      }
+    ]
+  },
+  "balancer": {
+    "strategy": "equalize_percentage",
+    "auto_balance": false,
+    "imbalance_threshold_percent": 10.0,
+    "schedule_interval_minutes": 60,
+    "rate_limit_mb_per_sec": 0
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8989,
+    "auth_enabled": true,
+    "password_hash": "",
+    "session_secret": "",
+    "session_token": ""
+  },
+  "updates": {
+    "check_enabled": true,
+    "github_repo": "chrisurwin/poolforge",
+    "check_interval_hours": 6
+  }
+}

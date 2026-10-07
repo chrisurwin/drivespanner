@@ -1,0 +1,7 @@
+/target
+*.wixobj
+*.wixpdb
+*.msi
+*.log
+.DS_Store
+Thumbs.db
