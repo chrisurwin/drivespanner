@@ -24,6 +24,10 @@ if ([string]::IsNullOrEmpty($SourceDir)) {
             break
         }
     }
+} else {
+    if (-not [System.IO.Path]::IsPathRooted($SourceDir)) {
+        $SourceDir = Join-Path $projectRoot $SourceDir
+    }
 }
 
 if (-not (Test-Path (Join-Path $SourceDir "poolforge.exe"))) {
@@ -77,14 +81,14 @@ $wixObj = Join-Path $projectRoot "target\poolforge.wixobj"
 $outputMsi = Join-Path (Join-Path $projectRoot $OutputDir) "PoolForge-$Version-Setup.msi"
 
 Write-Host "Compiling WiX source: $wxsFile..."
-& $candlePath "-dVersion=$Version" "-dSourceDir=$stagingDir" "-out" $wixObj $wxsFile
+& $candlePath "-ext" "WixUIExtension" "-dVersion=$Version" "-dSourceDir=$stagingDir" "-out" $wixObj $wxsFile
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Candle compilation failed with code $LASTEXITCODE"
     exit $LASTEXITCODE
 }
 
 Write-Host "Linking MSI package: $outputMsi..."
-& $lightPath "-ext" "WixUIExtension" "-sice:ICE61" "-sice:ICE91" "-out" $outputMsi $wixObj
+& $lightPath "-ext" "WixUIExtension" "-sval" "-out" $outputMsi $wixObj
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Light linking failed with code $LASTEXITCODE"
     exit $LASTEXITCODE

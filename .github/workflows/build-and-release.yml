@@ -53,12 +53,13 @@ jobs:
         shell: pwsh
         run: |
           $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
-          if (Test-Path $wixPath) {
-            Write-Host "Found WiX v3.11 at $wixPath"
-            Add-Content -Path $env:GITHUB_PATH -Value $wixPath
-          } else {
-            Write-Host "WiX not in default directory, checking PATH or installing..."
+          if (-not (Test-Path $wixPath)) {
+            Write-Host "WiX not in default directory, installing via Chocolatey..."
             choco install wixtoolset -y
+          }
+          if (Test-Path $wixPath) {
+            Write-Host "Found WiX v3.11 at $wixPath, adding to PATH"
+            Add-Content -Path $env:GITHUB_PATH -Value $wixPath
           }
 
       - name: Build MSI Installer

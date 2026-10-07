@@ -104,7 +104,7 @@
 
         <!-- Start Menu Shortcuts -->
         <DirectoryRef Id="ApplicationProgramsFolder">
-            <Component Id="ApplicationShortcut" Guid="4D82390F-238B-4B79-BF4A-1EE28701B27A">
+            <Component Id="ApplicationShortcut" Guid="4D82390F-238B-4B79-BF4A-1EE28701B27A" Win64="yes">
                 <Shortcut Id="OpenWebDashboard"
                           Name="PoolForge Web Dashboard"
                           Description="Open PoolForge management interface at http://localhost:8989"
@@ -119,7 +119,7 @@
                           WorkingDirectory="INSTALLFOLDER"
                           Icon="poolforge.ico" />
                 <RemoveFolder Id="CleanUpShortCut" Directory="ApplicationProgramsFolder" On="uninstall" />
-                <RegistryValue Root="HKCU" Key="Software\PoolForge" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+                <RegistryValue Root="HKLM" Key="Software\PoolForge" Name="installed" Type="integer" Value="1" KeyPath="yes" />
             </Component>
         </DirectoryRef>
 
@@ -138,7 +138,7 @@
             <UIRef Id="WixUI_InstallDir" />
 
             <Dialog Id="PoolDriveLetterDlg" Width="370" Height="270" Title="[ProductName] Setup">
-                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
                 <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
                 <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Virtual Pool Drive Letter" />
                 <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose the virtual drive letter for your aggregated storage pool." />
@@ -166,7 +166,7 @@
             </Dialog>
 
             <Dialog Id="InvalidDriveDlg" Width="280" Height="110" Title="Drive Letter Unavailable">
-                <Control Id="ErrorIcon" Type="Icon" X="15" Y="15" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="WixUI_Ico_Exclam" />
+                <Control Id="ErrorIcon" Type="Icon" X="15" Y="15" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="poolforge.ico" />
                 <Control Id="ErrorText" Type="Text" X="48" Y="15" Width="215" Height="50" Property="DRIVE_ERROR_MSG" Text="The selected drive letter is unavailable or invalid." />
                 <Control Id="OkButton" Type="PushButton" X="110" Y="75" Width="60" Height="17" Default="yes" Cancel="yes" Text="OK">
                     <Publish Event="EndDialog" Value="Return">1</Publish>
