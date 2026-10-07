@@ -52,16 +52,41 @@ Copy-Item (Join-Path $scriptDir "dialog.bmp") (Join-Path $stagingDir "dialog.bmp
 $candlePath = $null
 if (Get-Command candle.exe -ErrorAction SilentlyContinue) {
     $candlePath = (Get-Command candle.exe).Source
-} elseif ($env:WIX -and (Test-Path (Join-Path $env:WIX "bin\candle.exe"))) {
-    $candlePath = Join-Path $env:WIX "bin\candle.exe"
-} else {
-    $searchDirs = @("${env:ProgramFiles(x86)}", "${env:ProgramFiles}", "C:\Program Files (x86)", "C:\Program Files") | Where-Object { $_ -and (Test-Path $_) }
+}
+
+if (-not $candlePath -and $env:WIX) {
+    $candidates = @((Join-Path $env:WIX "bin\candle.exe"), (Join-Path $env:WIX "candle.exe"))
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { $candlePath = $c; break }
+    }
+}
+
+if (-not $candlePath) {
+    $searchDirs = @(
+        (Join-Path $projectRoot "target\wix311"),
+        "${env:ProgramFiles(x86)}",
+        "${env:ProgramFiles}",
+        "C:\Program Files (x86)",
+        "C:\Program Files"
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
     foreach ($sd in $searchDirs) {
+        if (Test-Path (Join-Path $sd "candle.exe")) {
+            $candlePath = Join-Path $sd "candle.exe"
+            break
+        }
+        if (Test-Path (Join-Path $sd "bin\candle.exe")) {
+            $candlePath = Join-Path $sd "bin\candle.exe"
+            break
+        }
         $wixDirs = Get-ChildItem -Path $sd -Filter "*WiX Toolset*" -Directory -ErrorAction SilentlyContinue
         foreach ($wd in $wixDirs) {
-            $candidate = Join-Path $wd.FullName "bin\candle.exe"
-            if (Test-Path $candidate) {
-                $candlePath = $candidate
+            if (Test-Path (Join-Path $wd.FullName "bin\candle.exe")) {
+                $candlePath = Join-Path $wd.FullName "bin\candle.exe"
+                break
+            }
+            if (Test-Path (Join-Path $wd.FullName "candle.exe")) {
+                $candlePath = Join-Path $wd.FullName "candle.exe"
                 break
             }
         }

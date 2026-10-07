@@ -29,7 +29,7 @@
         <!-- Drive Letter Selection Properties -->
         <Property Id="POOL_DRIVE_LETTER" Value="V:" />
         <Property Id="DRIVE_VALID" Value="1" />
-        <Property Id="DRIVE_ERROR_MSG" Value="" />
+        <Property Id="DRIVE_ERROR_MSG" Value="The selected drive letter is unavailable or invalid." />
 
         <!-- WinFsp Registry Checks -->
         <Property Id="WINFSP_INSTALLED">
@@ -166,7 +166,7 @@
             </Dialog>
 
             <Dialog Id="InvalidDriveDlg" Width="280" Height="110" Title="Drive Letter Unavailable">
-                <Control Id="ErrorIcon" Type="Icon" X="15" Y="15" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="poolforge.ico" />
+                <Control Id="ErrorIcon" Type="Icon" X="15" Y="15" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="WixUI_Ico_Exclam" />
                 <Control Id="ErrorText" Type="Text" X="48" Y="15" Width="215" Height="50" Property="DRIVE_ERROR_MSG" Text="The selected drive letter is unavailable or invalid." />
                 <Control Id="OkButton" Type="PushButton" X="110" Y="75" Width="60" Height="17" Default="yes" Cancel="yes" Text="OK">
                     <Publish Event="EndDialog" Value="Return">1</Publish>
@@ -176,7 +176,6 @@
             <!-- Hook custom dialog into the WixUI_InstallDir navigation sequence -->
             <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="PoolDriveLetterDlg" Order="4">WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID="1"</Publish>
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PoolDriveLetterDlg" Order="1">NOT Installed</Publish>
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2">Installed AND NOT PATCH</Publish>
         </UI>
 
         <UIRef Id="WixUI_ErrorProgressText" />
