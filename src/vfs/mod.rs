@@ -16,10 +16,6 @@ static IS_MOUNTED: AtomicBool = AtomicBool::new(false);
 pub struct PoolMounter;
 
 impl PoolMounter {
-    pub fn is_mounted() -> bool {
-        IS_MOUNTED.load(Ordering::SeqCst)
-    }
-
     /// Mounts the pooled storage as a native Windows drive letter using WinFsp
     pub fn start_mount(
         pool: Arc<StoragePool>,

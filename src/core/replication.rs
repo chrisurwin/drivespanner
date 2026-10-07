@@ -9,16 +9,6 @@ pub enum ReplicationHealth {
     Missing,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileReplicationStatus {
-    pub relative_path: String,
-    pub file_size: u64,
-    pub target_replicas: usize,
-    pub actual_replicas: usize,
-    pub disk_ids: Vec<String>,
-    pub health: ReplicationHealth,
-}
-
 pub struct ReplicationRulesEngine;
 
 impl ReplicationRulesEngine {

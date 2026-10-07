@@ -321,33 +321,4 @@ impl StoragePool {
 
         Ok(results)
     }
-
-    /// Deletes a file or directory across ALL member disks.
-    pub async fn delete_path(&self, relative_path: &str) -> std::io::Result<()> {
-        let disks = self.disks.read().unwrap();
-        let mut deleted_any = false;
-
-        for disk in disks.iter() {
-            let phys = disk.to_physical_path(relative_path);
-            if phys.is_file() {
-                if let Ok(_) = fs::remove_file(&phys) {
-                    deleted_any = true;
-                }
-            } else if phys.is_dir() {
-                if let Ok(_) = fs::remove_dir_all(&phys) {
-                    deleted_any = true;
-                }
-            }
-        }
-
-        if deleted_any {
-            info!("Deleted pooled path '{}' across member disks", relative_path);
-            Ok(())
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "File not found on any member disk",
-            ))
-        }
-    }
 }

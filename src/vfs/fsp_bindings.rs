@@ -1,4 +1,4 @@
-use libc::{c_char, c_int, c_void, size_t, uint32_t, uint64_t};
+use libc::{c_char, c_int, c_void, size_t};
 use std::ffi::CString;
 use std::mem;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -146,11 +146,12 @@ pub type FuseMainRealFn = unsafe extern "C" fn(
 ) -> c_int;
 
 pub type FuseExitFn = unsafe extern "C" fn(f: *mut c_void);
-pub type FuseGetContextFn = unsafe extern "C" fn() -> *mut c_void;
 
 pub struct WinFspDll {
+    #[allow(dead_code)]
     pub handle: *mut c_void,
     pub fuse_main_real: FuseMainRealFn,
+    #[allow(dead_code)]
     pub fuse_exit: Option<FuseExitFn>,
 }
 

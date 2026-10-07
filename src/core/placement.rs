@@ -4,7 +4,6 @@ use std::collections::HashSet;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacementPolicy {
     MostFreeSpace,
-    LowestUsedPercentage,
     LandingZoneFirst,
 }
 
@@ -43,13 +42,6 @@ impl PlacementEngine {
         match policy {
             PlacementPolicy::MostFreeSpace | PlacementPolicy::LandingZoneFirst => {
                 eligible.into_iter().max_by_key(|d| d.query_stats().free_bytes)
-            }
-            PlacementPolicy::LowestUsedPercentage => {
-                eligible.into_iter().min_by(|a, b| {
-                    let a_pct = a.query_stats().used_percent;
-                    let b_pct = b.query_stats().used_percent;
-                    a_pct.partial_cmp(&b_pct).unwrap_or(std::cmp::Ordering::Equal)
-                })
             }
         }
     }

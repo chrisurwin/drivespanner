@@ -30,14 +30,6 @@ pub struct BalancerStatus {
     pub is_balanced: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct MigrationPlan {
-    pub source_disk_id: String,
-    pub dest_disk_id: String,
-    pub relative_path: String,
-    pub file_size: u64,
-}
-
 pub struct DriveBalancer {
     pub state: Arc<RwLock<BalancerState>>,
     pub cancel_flag: Arc<AtomicBool>,

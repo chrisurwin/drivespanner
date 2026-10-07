@@ -98,13 +98,4 @@ impl ServiceManager {
             Err(format!("Failed to stop: {} {}", stdout.trim(), stderr.trim()))
         }
     }
-
-    pub fn status() -> Result<String, String> {
-        let output = Command::new("sc.exe")
-            .args(&["query", SERVICE_NAME])
-            .output()
-            .map_err(|e| format!("Failed to query service: {}", e))?;
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
 }

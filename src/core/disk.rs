@@ -142,19 +142,6 @@ impl MemberDisk {
         *self.cached_stats.lock().unwrap() = Some((Instant::now(), stats.clone()));
         stats
     }
-
-    pub fn count_files(&self) -> u64 {
-        if !self.pooldata_path.exists() {
-            return 0;
-        }
-        let count = walkdir::WalkDir::new(&self.pooldata_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .count() as u64;
-        self.approx_file_count.store(count, Ordering::SeqCst);
-        count
-    }
 }
 
 pub fn to_wide_null(s: &str) -> Vec<u16> {

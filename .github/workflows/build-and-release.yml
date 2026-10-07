@@ -14,6 +14,9 @@ jobs:
   build-and-package:
     name: Build Binary & MSI Installer
     runs-on: windows-latest
+    env:
+      NODE_OPTIONS: --no-deprecation
+      NODE_NO_WARNINGS: "1"
 
     steps:
       - name: Checkout Repository

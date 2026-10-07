@@ -261,27 +261,6 @@ impl PoolConfig {
         cfg
     }
 
-    pub fn load_or_create() -> (Self, PathBuf) {
-        let path = Self::get_config_path();
-        if path.exists() {
-            match fs::read_to_string(&path) {
-                Ok(content) => match serde_json::from_str::<PoolConfig>(&content) {
-                    Ok(cfg) => return (cfg, path),
-                    Err(e) => {
-                        eprintln!("Failed to parse config {}: {}. Generating default.", path.display(), e);
-                    }
-                },
-                Err(e) => {
-                    eprintln!("Failed to read config {}: {}. Generating default.", path.display(), e);
-                }
-            }
-        }
-
-        let cfg = PoolConfig::default();
-        let _ = cfg.save_to(&path);
-        (cfg, path)
-    }
-
     pub fn save_to<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
@@ -290,14 +269,5 @@ impl PoolConfig {
         let json = serde_json::to_string_pretty(self)?;
         fs::write(path, json)?;
         Ok(())
-    }
-
-    pub fn pooldata_folder_for_disk(&self, disk_id: &str) -> String {
-        for drive in &self.member_drives {
-            if drive.id == disk_id {
-                return drive.pooldata_name.clone();
-            }
-        }
-        format!("PoolData.{}", self.pool_id)
     }
 }
