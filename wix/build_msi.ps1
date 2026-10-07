@@ -49,29 +49,32 @@ Copy-Item (Join-Path $scriptDir "banner.bmp") (Join-Path $stagingDir "banner.bmp
 Copy-Item (Join-Path $scriptDir "dialog.bmp") (Join-Path $stagingDir "dialog.bmp") -Force
 
 # Locate WiX tools
-$wixBins = @(
-    "candle.exe",
-    "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin\candle.exe",
-    "${env:ProgramFiles}\WiX Toolset v3.11\bin\candle.exe",
-    "${env:WIX}\bin\candle.exe"
-)
-
 $candlePath = $null
-foreach ($c in $wixBins) {
-    if (Get-Command $c -ErrorAction SilentlyContinue) {
-        $candlePath = (Get-Command $c).Source
-        break
-    } elseif (Test-Path $c) {
-        $candlePath = $c
-        break
+if (Get-Command candle.exe -ErrorAction SilentlyContinue) {
+    $candlePath = (Get-Command candle.exe).Source
+} elseif ($env:WIX -and (Test-Path (Join-Path $env:WIX "bin\candle.exe"))) {
+    $candlePath = Join-Path $env:WIX "bin\candle.exe"
+} else {
+    $searchDirs = @("${env:ProgramFiles(x86)}", "${env:ProgramFiles}", "C:\Program Files (x86)", "C:\Program Files") | Where-Object { $_ -and (Test-Path $_) }
+    foreach ($sd in $searchDirs) {
+        $wixDirs = Get-ChildItem -Path $sd -Filter "*WiX Toolset*" -Directory -ErrorAction SilentlyContinue
+        foreach ($wd in $wixDirs) {
+            $candidate = Join-Path $wd.FullName "bin\candle.exe"
+            if (Test-Path $candidate) {
+                $candlePath = $candidate
+                break
+            }
+        }
+        if ($candlePath) { break }
     }
 }
 
 if (-not $candlePath) {
-    Write-Error "WiX Toolset (candle.exe / light.exe) was not found. Please install WiX Toolset v3.11 or run on GitHub Actions."
+    Write-Error "WiX Toolset (candle.exe / light.exe) was not found."
     exit 1
 }
 
+Write-Host "Found WiX candle at: $candlePath"
 $wixDir = Split-Path -Parent $candlePath
 $lightPath = Join-Path $wixDir "light.exe"
 
@@ -81,14 +84,16 @@ $wixObj = Join-Path $projectRoot "target\poolforge.wixobj"
 $outputMsi = Join-Path (Join-Path $projectRoot $OutputDir) "PoolForge-$Version-Setup.msi"
 
 Write-Host "Compiling WiX source: $wxsFile..."
-& $candlePath "-ext" "WixUIExtension" "-dVersion=$Version" "-dSourceDir=$stagingDir" "-out" $wixObj $wxsFile
+$candleOutput = & $candlePath "-ext" "WixUIExtension" "-dVersion=$Version" "-dSourceDir=$stagingDir" "-out" $wixObj $wxsFile 2>&1
+$candleOutput | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Candle compilation failed with code $LASTEXITCODE"
     exit $LASTEXITCODE
 }
 
 Write-Host "Linking MSI package: $outputMsi..."
-& $lightPath "-ext" "WixUIExtension" "-sval" "-out" $outputMsi $wixObj
+$lightOutput = & $lightPath "-ext" "WixUIExtension" "-sval" "-out" $outputMsi $wixObj 2>&1
+$lightOutput | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Light linking failed with code $LASTEXITCODE"
     exit $LASTEXITCODE

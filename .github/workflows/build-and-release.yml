@@ -52,14 +52,35 @@ jobs:
       - name: Add WiX Toolset to PATH
         shell: pwsh
         run: |
-          $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
-          if (-not (Test-Path $wixPath)) {
-            Write-Host "WiX not in default directory, installing via Chocolatey..."
-            choco install wixtoolset -y
+          if (Get-Command candle.exe -ErrorAction SilentlyContinue) {
+            Write-Host "candle.exe is already available in PATH"
+            exit 0
           }
-          if (Test-Path $wixPath) {
-            Write-Host "Found WiX v3.11 at $wixPath, adding to PATH"
-            Add-Content -Path $env:GITHUB_PATH -Value $wixPath
+
+          $wixDirs = Get-ChildItem -Path @("${env:ProgramFiles(x86)}", "${env:ProgramFiles}", "C:\Program Files (x86)", "C:\Program Files") -Filter "*WiX Toolset*" -Directory -ErrorAction SilentlyContinue
+          if (-not $wixDirs) {
+            Write-Host "Installing WiX Toolset via Chocolatey..."
+            choco install wixtoolset -y
+            $wixDirs = Get-ChildItem -Path @("${env:ProgramFiles(x86)}", "${env:ProgramFiles}", "C:\Program Files (x86)", "C:\Program Files") -Filter "*WiX Toolset*" -Directory -ErrorAction SilentlyContinue
+          }
+
+          $binPath = $null
+          foreach ($wd in $wixDirs) {
+            $candidate = Join-Path $wd.FullName "bin"
+            if (Test-Path (Join-Path $candidate "candle.exe")) {
+              $binPath = $candidate
+              break
+            }
+          }
+
+          if ($binPath) {
+            Write-Host "Found WiX at $binPath, adding to GITHUB_PATH"
+            Add-Content -Path $env:GITHUB_PATH -Value $binPath
+          } elseif ($env:WIX -and (Test-Path (Join-Path $env:WIX "bin\candle.exe"))) {
+            Write-Host "Found WiX via WIX env var: $env:WIX\bin"
+            Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:WIX "bin")
+          } else {
+            Write-Host "WiX directory will be located dynamically by build_msi.ps1"
           }
 
       - name: Build MSI Installer
