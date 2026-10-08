@@ -518,13 +518,17 @@ pub unsafe extern "C" fn fs_create(
     let disks = pool.disks.read().unwrap();
     let excluded = HashSet::new();
 
-    // Placement policy: pick disk with most free space
-    let target_disk = PlacementEngine::select_primary_disk(
-        &disks,
-        &excluded,
-        1024 * 1024,
-        PlacementPolicy::MostFreeSpace,
-    );
+    // Check if the file already exists on one of the member disks.
+    // If it does, reuse that disk to overwrite in-place and prevent orphaned duplicate files!
+    let existing_disk = disks.iter().find(|d| d.to_physical_path(&rel_path).is_file());
+    let target_disk = existing_disk.or_else(|| {
+        PlacementEngine::select_primary_disk(
+            &disks,
+            &excluded,
+            1024 * 1024,
+            PlacementPolicy::MostFreeSpace,
+        )
+    });
 
     match target_disk {
         Some(disk) => {
