@@ -122,3 +122,50 @@ function ApplyConfigDriveLetter() {
     }
     return 1;
 }
+
+function InstallWinFsp() {
+    try {
+        var shell = new ActiveXObject("WScript.Shell");
+        var script = "$url = 'https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi'; " +
+            "$tmp = Join-Path $env:TEMP 'winfsp-installer.msi'; " +
+            "Write-Host 'Downloading WinFsp prerequisite...' -ForegroundColor Cyan; " +
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " +
+            "Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing; " +
+            "Write-Host 'Installing WinFsp silently...' -ForegroundColor Green; " +
+            "$proc = Start-Process msiexec.exe -ArgumentList '/i `\"' + $tmp + '`\" /passive' -Wait -PassThru; " +
+            "Remove-Item $tmp -Force -ErrorAction SilentlyContinue; " +
+            "Write-Host 'WinFsp installation completed!' -ForegroundColor Green";
+
+        var cmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"" + script + "\"";
+        shell.Run(cmd, 1, true);
+
+        CheckWinFspStatus();
+    } catch (e) {
+        // Fallback
+    }
+    return 1;
+}
+
+function OpenWinFspUrl() {
+    try {
+        var shell = new ActiveXObject("WScript.Shell");
+        shell.Run("https://github.com/winfsp/winfsp/releases");
+    } catch (e) {}
+    return 1;
+}
+
+function CheckWinFspStatus() {
+    try {
+        var fso = new ActiveXObject("Scripting.FileSystemObject");
+        var p1 = "C:\\Program Files (x86)\\WinFsp\\bin\\winfsp-x64.dll";
+        var p2 = "C:\\Program Files\\WinFsp\\bin\\winfsp-x64.dll";
+        if (fso.FileExists(p1) || fso.FileExists(p2)) {
+            Session.Property("WINFSP_INSTALLED") = "1";
+            Session.Property("WINFSP_STATUS_TEXT") = "WinFsp is installed and ready.";
+        } else {
+            Session.Property("WINFSP_STATUS_TEXT") = "WinFsp is not detected. Please install it before proceeding.";
+        }
+    } catch (e) {}
+    return 1;
+}
+

@@ -25,4 +25,5 @@ libc = "0.2"
 log = "0.4"
 
 walkdir = "2.5"
+windows-service = "0.7"
 

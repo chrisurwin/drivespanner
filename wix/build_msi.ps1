@@ -47,6 +47,7 @@ Copy-Item (Join-Path $scriptDir "validate_drive.js") (Join-Path $stagingDir "val
 Copy-Item (Join-Path $scriptDir "poolforge.ico") (Join-Path $stagingDir "poolforge.ico") -Force
 Copy-Item (Join-Path $scriptDir "banner.bmp") (Join-Path $stagingDir "banner.bmp") -Force
 Copy-Item (Join-Path $scriptDir "dialog.bmp") (Join-Path $stagingDir "dialog.bmp") -Force
+Copy-Item (Join-Path $scriptDir "License.rtf") (Join-Path $stagingDir "License.rtf") -Force
 
 # Locate WiX tools
 $candlePath = $null

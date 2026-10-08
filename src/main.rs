@@ -34,6 +34,12 @@ fn main() {
         "service" => {
             let subcmd = args.get(2).map(|s| s.as_str()).unwrap_or("help");
             match subcmd {
+                "run" => {
+                    info!("Starting PoolForge Windows Service dispatcher...");
+                    if let Err(e) = service::run_service() {
+                        error!("Windows Service error: {}", e);
+                    }
+                }
                 "install" => {
                     info!("Installing PoolForge Windows Service...");
                     if let Err(e) = ServiceManager::install() {
@@ -59,7 +65,7 @@ fn main() {
                     }
                 }
                 _ => {
-                    println!("Usage: poolforge service [install | uninstall | start | stop]");
+                    println!("Usage: poolforge service [run | install | uninstall | start | stop]");
                 }
             }
         }
@@ -201,7 +207,7 @@ fn main() {
                 .build()
                 .expect("Failed to build Tokio runtime");
 
-            if let Err(e) = rt.block_on(async { async_main().await }) {
+            if let Err(e) = rt.block_on(async { async_main(None).await }) {
                 error!("Daemon error: {}", e);
             }
         }
@@ -211,7 +217,9 @@ fn main() {
     }
 }
 
-async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn async_main(
+    mut shutdown_rx: Option<tokio::sync::oneshot::Receiver<()>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = PoolConfig::get_config_path();
     info!("Loading storage configuration from {}", config_path.display());
     let cfg = PoolConfig::load_or_default(&config_path);
@@ -247,7 +255,16 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
-            info!("Received shutdown signal. Exiting PoolForge...");
+            info!("Received console Ctrl+C shutdown signal. Exiting PoolForge...");
+        }
+        _ = async {
+            if let Some(ref mut rx) = shutdown_rx {
+                let _ = rx.await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        } => {
+            info!("Received Windows Service STOP signal. Exiting PoolForge...");
         }
         _ = api_task => {
             warn!("API server closed.");

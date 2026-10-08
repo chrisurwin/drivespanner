@@ -22,16 +22,17 @@
         <Icon Id="poolforge.ico" SourceFile="$(var.SourceDir)\poolforge.ico" />
         <Property Id="ARPPRODUCTICON" Value="poolforge.ico" />
 
-        <!-- Installer Branding Bitmaps -->
+        <!-- Installer Branding Bitmaps and License Agreement -->
         <WixVariable Id="WixUIBannerBmp" Value="$(var.SourceDir)\banner.bmp" />
         <WixVariable Id="WixUIDialogBmp" Value="$(var.SourceDir)\dialog.bmp" />
+        <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\License.rtf" />
 
         <!-- Drive Letter Selection Properties -->
         <Property Id="POOL_DRIVE_LETTER" Value="V:" />
         <Property Id="DRIVE_VALID" Value="1" />
         <Property Id="DRIVE_ERROR_MSG" Value="The selected drive letter is unavailable or invalid." />
 
-        <!-- WinFsp Registry Checks -->
+        <!-- WinFsp Detection Checks -->
         <Property Id="WINFSP_INSTALLED">
             <RegistrySearch Id="WinFspRegSearch" Root="HKLM" Key="SOFTWARE\WinFsp" Name="InstallDir" Type="raw" Win64="yes" />
         </Property>
@@ -39,16 +40,14 @@
             <RegistrySearch Id="WinFspRegSearchWow" Root="HKLM" Key="SOFTWARE\WOW6432Node\WinFsp" Name="InstallDir" Type="raw" />
         </Property>
 
-        <!-- Prerequisite Validation -->
-        <Condition Message="WinFsp is required by PoolForge for filesystem mounting. Please install WinFsp from https://github.com/winfsp/winfsp/releases or run the installer with SKIP_WINFSP_CHECK=1.">
-            <![CDATA[Installed OR WINFSP_INSTALLED OR WINFSP_INSTALLED_WOW64 OR (SKIP_WINFSP_CHECK = "1")]]>
-        </Condition>
-
-        <!-- Embedded Script for Drive Letter Detection, Validation, and Config File Application -->
+        <!-- Embedded Script for Drive Letter Detection, WinFsp Helpers, and Config File Application -->
         <Binary Id="ValidateDriveScript" SourceFile="$(var.SourceDir)\validate_drive.js" />
         <CustomAction Id="InitDriveLetterAction" BinaryKey="ValidateDriveScript" JScriptCall="InitDriveLetter" Execute="immediate" Return="check" />
         <CustomAction Id="ValidateDriveLetterAction" BinaryKey="ValidateDriveScript" JScriptCall="ValidateDriveLetter" Execute="immediate" Return="check" />
         <CustomAction Id="ApplyConfigDriveLetterAction" BinaryKey="ValidateDriveScript" JScriptCall="ApplyConfigDriveLetter" Execute="immediate" Return="check" />
+        <CustomAction Id="InstallWinFspAction" BinaryKey="ValidateDriveScript" JScriptCall="InstallWinFsp" Execute="immediate" Return="check" />
+        <CustomAction Id="OpenWinFspUrlAction" BinaryKey="ValidateDriveScript" JScriptCall="OpenWinFspUrl" Execute="immediate" Return="check" />
+        <CustomAction Id="CheckWinFspStatusAction" BinaryKey="ValidateDriveScript" JScriptCall="CheckWinFspStatus" Execute="immediate" Return="check" />
 
         <!-- Directory Structure: Install to %ProgramFiles%\PoolForge -->
         <Directory Id="TARGETDIR" Name="SourceDir">
@@ -173,7 +172,47 @@
                 </Control>
             </Dialog>
 
-            <!-- Hook custom dialog into the WixUI_InstallDir navigation sequence -->
+            <Dialog Id="WinFspPrereqDlg" Width="370" Height="270" Title="[ProductName] Setup">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+                <Control Id="Title" Type="Text" X="15" Y="6" Width="220" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Prerequisite: WinFsp Required" />
+                <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Filesystem driver required for virtual storage pool mounting." />
+
+                <Control Id="PrereqIcon" Type="Icon" X="20" Y="58" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="WixUI_Ico_Exclam" />
+                <Control Id="PrereqText" Type="Text" X="55" Y="58" Width="295" Height="45" Text="PoolForge requires the WinFsp (Windows File System Proxy) driver to mount your pooled storage into Windows Explorer. WinFsp was not detected on this system." />
+
+                <Control Id="InstallBtn" Type="PushButton" X="55" Y="112" Width="185" Height="24" Default="yes" Text="&amp;Install WinFsp Automatically">
+                    <Publish Event="DoAction" Value="InstallWinFspAction">1</Publish>
+                    <Publish Event="DoAction" Value="CheckWinFspStatusAction">1</Publish>
+                    <Publish Event="NewDialog" Value="InstallDirDlg">WINFSP_INSTALLED</Publish>
+                </Control>
+
+                <Control Id="WebBtn" Type="PushButton" X="55" Y="144" Width="185" Height="20" Text="&amp;Open WinFsp Download Page">
+                    <Publish Event="DoAction" Value="OpenWinFspUrlAction">1</Publish>
+                </Control>
+
+                <Control Id="NoteText" Type="Text" X="55" Y="174" Width="295" Height="35" Text="Click 'Install WinFsp Automatically' to download and install now. If you prefer to install WinFsp later, click Next to continue." />
+
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+                    <Publish Event="NewDialog" Value="LicenseAgreementDlg">1</Publish>
+                </Control>
+                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Text="&amp;Next">
+                    <Publish Event="DoAction" Value="CheckWinFspStatusAction">1</Publish>
+                    <Publish Event="NewDialog" Value="InstallDirDlg">1</Publish>
+                </Control>
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                    <Publish Event="SpawnDialog" Value="CancelDlg">1</Publish>
+                </Control>
+            </Dialog>
+
+            <!-- Hook custom dialogs into the WixUI_InstallDir navigation sequence -->
+            <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="WinFspPrereqDlg" Order="2">NOT Installed AND NOT WINFSP_INSTALLED AND NOT WINFSP_INSTALLED_WOW64 AND NOT (SKIP_WINFSP_CHECK = "1")</Publish>
+            <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="3">Installed OR WINFSP_INSTALLED OR WINFSP_INSTALLED_WOW64 OR (SKIP_WINFSP_CHECK = "1")</Publish>
+
+            <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WinFspPrereqDlg" Order="1">NOT Installed AND NOT WINFSP_INSTALLED AND NOT WINFSP_INSTALLED_WOW64 AND NOT (SKIP_WINFSP_CHECK = "1")</Publish>
+            <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="2">Installed OR WINFSP_INSTALLED OR WINFSP_INSTALLED_WOW64 OR (SKIP_WINFSP_CHECK = "1")</Publish>
+
             <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="PoolDriveLetterDlg" Order="4">WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID="1"</Publish>
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PoolDriveLetterDlg" Order="1">NOT Installed</Publish>
         </UI>
