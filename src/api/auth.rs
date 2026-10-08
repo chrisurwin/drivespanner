@@ -65,21 +65,30 @@ impl Sha256 {
         let total_bits = self.count * 8;
         let index = (self.count % 64) as usize;
 
+        // Append padding 0x80 byte
         self.buffer[index] = 0x80;
-        let pad_len = if index < 56 { 55 - index } else { 63 - index + 56 };
-        for i in 1..=pad_len {
-            self.buffer[index + i] = 0;
-        }
 
-        if index >= 56 {
+        if index < 56 {
+            // Pad remaining bytes up to index 55 with 0
+            for b in &mut self.buffer[index + 1..56] {
+                *b = 0;
+            }
+        } else {
+            // Pad remaining bytes in current block with 0
+            for b in &mut self.buffer[index + 1..64] {
+                *b = 0;
+            }
             let block = self.buffer;
             self.transform(&block);
+            // New block initialized to zeros
             self.buffer = [0u8; 64];
         }
 
+        // Place length in bits as 64-bit big endian integer in last 8 bytes
         self.buffer[56..64].copy_from_slice(&total_bits.to_be_bytes());
         let block = self.buffer;
         self.transform(&block);
+
 
         let mut out = [0u8; 32];
         for (i, val) in self.state.iter().enumerate() {
@@ -196,3 +205,50 @@ pub fn generate_session_token(secret: &str) -> String {
     let raw = format!("session-{}-{}-{}", secret, now, counter);
     sha256_hex(raw.as_bytes())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sha256_nist_vectors() {
+        // Test empty string
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        // Test "abc"
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        // Test 56-byte message (exact index = 56 boundary that previously crashed)
+        assert_eq!(
+            sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+        );
+        // Test varying lengths around block boundaries: 55, 56, 57, 63, 64, 65, 127, 128
+        for len in [0, 1, 55, 56, 57, 63, 64, 65, 127, 128, 256] {
+            let data = vec![b'a'; len];
+            let hash = sha256_hex(&data);
+            assert_eq!(hash.len(), 64);
+        }
+    }
+
+    #[test]
+    fn test_hash_and_verify_password() {
+        let pwd = "SuperSecretPassword123!";
+        let hash = hash_password(pwd, None);
+        assert!(!hash.is_empty());
+        assert!(verify_password(pwd, &hash));
+        assert!(!verify_password("WrongPassword", &hash));
+    }
+
+    #[test]
+    fn test_generate_session_token() {
+        let token = generate_session_token("my-secret");
+        assert_eq!(token.len(), 64);
+    }
+}
+
+

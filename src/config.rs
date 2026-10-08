@@ -63,7 +63,9 @@ pub struct BalancerConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiConfig {
+    #[serde(default = "default_host")]
     pub host: String, // "127.0.0.1" or "0.0.0.0"
+    #[serde(default = "default_port")]
     pub port: u16,    // default 8989
     #[serde(default = "default_true")]
     pub auth_enabled: bool,
@@ -74,6 +76,15 @@ pub struct ApiConfig {
     #[serde(default)]
     pub session_token: String,
 }
+
+fn default_host() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_port() -> u16 {
+    8989
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateConfig {

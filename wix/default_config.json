@@ -1,29 +1,30 @@
 {
   "pool_id": "default-pool",
-  "pool_name": "PoolForge Virtual Storage",
+  "pool_name": "PoolForge Storage",
   "mount_point": "V:",
-  "member_disks": [],
-  "replication_rules": [],
-  "default_replicas": 2,
+  "member_drives": [],
+  "replication": {
+    "default_replicas": 2,
+    "rules": []
+  },
+  "balancer": {
+    "strategy": "equalize_percentage",
+    "auto_balance": true,
+    "imbalance_threshold_percent": 15.0,
+    "schedule_interval_minutes": 60,
+    "rate_limit_mb_per_sec": 0
+  },
   "api": {
-    "enabled": true,
+    "host": "0.0.0.0",
     "port": 8989,
-    "listen_all": true,
     "auth_enabled": true,
     "password_hash": "",
     "session_secret": "",
     "session_token": ""
   },
-  "balancer": {
-    "enabled": true,
-    "schedule_cron": "0 2 * * *",
-    "threshold_imbalance_percent": 15.0,
-    "io_throttle_mb_s": 50.0,
-    "idle_only": true
-  },
   "updates": {
-    "check_interval_hours": 24,
+    "check_enabled": true,
     "github_repo": "chrisurwin/poolforge",
-    "auto_notify": true
+    "check_interval_hours": 24
   }
 }

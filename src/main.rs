@@ -69,6 +69,18 @@ fn main() {
                 }
             }
         }
+        "uninstall" => {
+            println!("Uninstalling PoolForge Storage Service...");
+            info!("Stopping and removing Windows Service...");
+            if let Err(e) = ServiceManager::uninstall() {
+                warn!("Service uninstall note: {}", e);
+            }
+            println!("Service uninstalled successfully.");
+            println!("Launching Windows Installer removal...");
+            let _ = std::process::Command::new("msiexec.exe")
+                .args(&["/x", "{8FA9C82A-C1A5-42E1-A88E-3BC3B22E42B1}"])
+                .spawn();
+        }
         "set-mount" => {
             if args.len() < 3 {
                 println!("Usage: poolforge set-mount <LETTER>");
@@ -175,29 +187,11 @@ fn main() {
         }
         "mount" => {
             let letter = args.get(2).cloned().unwrap_or_else(|| "V:".to_string());
-
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to build Tokio runtime");
-
-            rt.block_on(async move {
-                let config_path = PoolConfig::get_config_path();
-                let cfg = PoolConfig::load_or_default(&config_path);
-                let shared_cfg: SharedConfig = Arc::new(RwLock::new(cfg));
-                let (pool, _rep_handle) = StoragePool::new(shared_cfg);
-                let pool_arc = Arc::new(pool);
-                let _ = pool_arc.initialize_from_config().await;
-
-                info!("Starting WinFsp mount on {}", letter);
-                match PoolMounter::start_mount(pool_arc, letter.clone()) {
-                    Ok(_) => {
-                        info!("WinFsp filesystem dispatcher initiated for {}", letter);
-                        let _ = tokio::signal::ctrl_c().await;
-                    }
-                    Err(e) => error!("Mount error: {}", e),
-                }
-            });
+            PoolMounter::run_worker(&letter);
+        }
+        "mount-worker" => {
+            let letter = args.get(2).cloned().unwrap_or_else(|| "V:".to_string());
+            PoolMounter::run_worker(&letter);
         }
         "run" => {
             print_banner();
@@ -271,6 +265,8 @@ pub async fn async_main(
         }
     }
 
+    let _ = PoolMounter::stop_mount(pool_arc);
+
     Ok(())
 }
 
@@ -303,6 +299,7 @@ Commands:
   service uninstall     Remove the PoolForge Windows Service
   service start         Start the Windows Service
   service stop          Stop the Windows Service
+  uninstall             Stop the service and launch full application uninstallation
   help                  Display this help message
 
 Options:

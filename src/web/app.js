@@ -5,6 +5,8 @@ let currentExplorerPath = '/';
 let lastDrivesFetchTime = 0;
 let latestUpdateData = null;
 let pollInterval = null;
+let latestOverview = null;
+let latestMemberDrives = [];
 
 // Authenticated API wrapper
 async function apiFetch(url, options = {}) {
@@ -96,27 +98,52 @@ async function submitSetupPassword() {
     }
 
     errBox.style.display = 'none';
+    const btnSubmit = document.getElementById('btn-submit-setup');
+    const origText = btnSubmit ? btnSubmit.textContent : '';
+    if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = 'Saving password...';
+    }
+
     try {
         const res = await fetch('/api/auth/setup', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
             body: JSON.stringify({ password: pwd })
         });
-        const data = await res.json();
-        if (data.success && data.token) {
+
+        const rawText = await res.text();
+        let data = null;
+        try {
+            data = JSON.parse(rawText);
+        } catch (_) {
+            console.error('Non-JSON response from /api/auth/setup:', rawText);
+        }
+
+        if (res.ok && data && data.success && data.token) {
             localStorage.setItem('pf_token', data.token);
             document.getElementById('modal-auth-setup').classList.remove('show');
             const btnLogout = document.getElementById('btn-logout');
             if (btnLogout) btnLogout.style.display = 'inline-flex';
-            fetchPoolData(true);
-            fetchUpdates();
+            try { fetchPoolData(true); } catch (e) { console.error(e); }
+            try { fetchUpdates(); } catch (e) { console.error(e); }
         } else {
-            errBox.textContent = data.message || 'Setup failed';
+            const msg = (data && (data.message || data.error)) || `Server returned ${res.status}: ${res.statusText || rawText.substring(0, 80)}`;
+            errBox.textContent = msg;
             errBox.style.display = 'block';
         }
     } catch (e) {
-        errBox.textContent = 'Error connecting to server';
+        console.error('Network failure connecting to /api/auth/setup:', e);
+        errBox.textContent = 'Network error connecting to server: ' + (e.message || 'Connection failed');
         errBox.style.display = 'block';
+    } finally {
+        if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = origText;
+        }
     }
 }
 
@@ -131,30 +158,56 @@ async function submitLogin() {
     }
 
     errBox.style.display = 'none';
+    const btnLogin = document.getElementById('btn-submit-login');
+    const origText = btnLogin ? btnLogin.textContent : '';
+    if (btnLogin) {
+        btnLogin.disabled = true;
+        btnLogin.textContent = 'Signing in...';
+    }
+
     try {
         const res = await fetch('/api/auth/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
             body: JSON.stringify({ password: pwd })
         });
-        const data = await res.json();
-        if (data.success && data.token) {
+
+        const rawText = await res.text();
+        let data = null;
+        try {
+            data = JSON.parse(rawText);
+        } catch (_) {
+            console.error('Non-JSON response from /api/auth/login:', rawText);
+        }
+
+        if (res.ok && data && data.success && data.token) {
             localStorage.setItem('pf_token', data.token);
             document.getElementById('modal-auth-login').classList.remove('show');
             document.getElementById('input-login-password').value = '';
             const btnLogout = document.getElementById('btn-logout');
             if (btnLogout) btnLogout.style.display = 'inline-flex';
-            fetchPoolData(true);
-            fetchUpdates();
+            try { fetchPoolData(true); } catch (e) { console.error(e); }
+            try { fetchUpdates(); } catch (e) { console.error(e); }
         } else {
-            errBox.textContent = data.message || 'Invalid password';
+            const msg = (data && (data.message || data.error)) || `Server returned ${res.status}: ${res.statusText || rawText.substring(0, 80)}`;
+            errBox.textContent = msg;
             errBox.style.display = 'block';
         }
     } catch (e) {
-        errBox.textContent = 'Error communicating with server';
+        console.error('Network failure connecting to /api/auth/login:', e);
+        errBox.textContent = 'Network error communicating with server: ' + (e.message || 'Connection failed');
         errBox.style.display = 'block';
+    } finally {
+        if (btnLogin) {
+            btnLogin.disabled = false;
+            btnLogin.textContent = origText;
+        }
     }
 }
+
 
 async function handleLogout() {
     try {
@@ -306,6 +359,7 @@ async function fetchPoolData(forceDrivesRefresh = false) {
 // Render Overview
 function renderOverview(overview, replication, balancer) {
     if (!overview) return;
+    latestOverview = overview;
 
     document.getElementById('val-total-space').textContent = formatBytes(overview.total_bytes);
     document.getElementById('val-space-breakdown').textContent = 
@@ -333,6 +387,18 @@ function renderOverview(overview, replication, balancer) {
         document.getElementById('btn-mount-toggle').classList.replace('btn-outline', 'btn-primary');
     }
 
+    const cfgMountVal = document.getElementById('service-cfg-mount-val');
+    if (cfgMountVal) cfgMountVal.textContent = `${overview.mount_point}\\`;
+    const cfgMountStatus = document.getElementById('service-cfg-mount-status');
+    if (cfgMountStatus) {
+        cfgMountStatus.textContent = overview.is_mounted ? 'Mounted & Active' : 'Unmounted';
+        cfgMountStatus.className = overview.is_mounted ? 'info-val text-green' : 'info-val';
+    }
+    const selectDriveElem = document.getElementById('select-pool-drive-letter');
+    if (selectDriveElem && !selectDriveElem.dataset.userInteracted) {
+        selectDriveElem.value = overview.mount_point;
+    }
+
     // Replication widget
     const dupHealth = document.getElementById('val-duplication-health');
     if (overview.under_replicated_count > 0) {
@@ -355,6 +421,7 @@ function renderOverview(overview, replication, balancer) {
 
 // Render Member Drives
 function renderDrives(drives) {
+    latestMemberDrives = drives || [];
     const container = document.getElementById('drives-container');
     if (!container) return;
 
@@ -477,10 +544,19 @@ function renderAvailableDrives(available) {
     const list = document.getElementById('modal-available-drives');
     if (!list) return;
 
-    const unpooled = (available || []).filter(a => !a.is_already_member);
+    const memberLetters = (latestMemberDrives || []).map(d => (d.drive_path || '').substring(0, 1).toUpperCase());
+    const mountLetter = latestOverview ? (latestOverview.mount_point || '').substring(0, 1).toUpperCase() : '';
+
+    const unpooled = (available || []).filter(a => {
+        if (a.is_already_member) return false;
+        const letter = (a.drive_letter || '').substring(0, 1).toUpperCase();
+        if (memberLetters.includes(letter)) return false;
+        if (mountLetter && letter === mountLetter) return false;
+        return true;
+    });
 
     if (unpooled.length === 0) {
-        list.innerHTML = `<p style="color: var(--text-muted); padding: 12px;">No unpooled drives detected. All available disks are already in the pool!</p>`;
+        list.innerHTML = `<p style="color: var(--text-muted); padding: 12px;">No unpooled drives detected. All available disks are already in the pool or reserved for virtual mount!</p>`;
         return;
     }
 
@@ -548,18 +624,53 @@ function setupActions() {
     document.getElementById('btn-refresh').addEventListener('click', () => fetchPoolData(true));
 
     document.getElementById('btn-mount-toggle').addEventListener('click', async () => {
+        const isMounted = latestOverview && latestOverview.is_mounted;
+        const mountPoint = latestOverview ? latestOverview.mount_point : 'V:';
         try {
-            const res = await apiFetch('/api/mount', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ drive_letter: 'V:' })
-            }).then(r => r.json());
-            alert(res.message);
+            if (isMounted) {
+                const res = await apiFetch('/api/unmount', { method: 'POST' }).then(r => r.json());
+                alert(res.message);
+            } else {
+                const res = await apiFetch('/api/mount', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ drive_letter: mountPoint })
+                }).then(r => r.json());
+                alert(res.message);
+            }
             fetchPoolData(true);
         } catch (e) {
             console.error(e);
+            alert(e.message || 'Mount operation failed');
         }
     });
+
+    const btnSaveMount = document.getElementById('btn-save-mount-letter');
+    if (btnSaveMount) {
+        btnSaveMount.addEventListener('click', async () => {
+            const selectDrive = document.getElementById('select-pool-drive-letter');
+            const newLetter = selectDrive ? selectDrive.value : 'V:';
+            try {
+                const res = await apiFetch('/api/mount/letter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ drive_letter: newLetter })
+                }).then(r => r.json());
+                alert(res.message);
+                fetchPoolData(true);
+            } catch (e) {
+                console.error(e);
+                alert(e.message || 'Failed to update mount letter');
+            }
+        });
+    }
+
+    const selectDrive = document.getElementById('select-pool-drive-letter');
+    if (selectDrive) {
+        selectDrive.addEventListener('change', () => {
+            selectDrive.dataset.userInteracted = 'true';
+        });
+    }
 
     document.getElementById('btn-trigger-scrub').addEventListener('click', async () => {
         try {
@@ -669,6 +780,7 @@ async function addDrive(drivePath, isLandingZone) {
         fetchPoolData(true);
     } catch (e) {
         console.error(e);
+        alert(e.message || 'Failed to add drive to storage pool');
     }
 }
 

@@ -852,8 +852,24 @@ pub unsafe extern "C" fn fs_access(path_ptr: *const c_char, _mask: c_int) -> c_i
     fs_getattr(path_ptr, &mut st)
 }
 
+pub static FUSE_HANDLE: std::sync::atomic::AtomicPtr<c_void> = std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
+pub unsafe extern "C" fn fs_init(_conn: *mut c_void) -> *mut c_void {
+    info!("WinFsp virtual filesystem init callback invoked - mount successful");
+    if let Ok(winfsp) = WinFspDll::load() {
+        if let Some(get_ctx) = winfsp.fuse_get_context {
+            let ctx = get_ctx();
+            if !ctx.is_null() {
+                FUSE_HANDLE.store((*ctx).fuse, Ordering::SeqCst);
+            }
+        }
+    }
+    std::ptr::null_mut()
+}
+
 pub fn create_fuse_operations() -> FuseOperations {
     let mut ops = FuseOperations::default();
+    ops.init = Some(fs_init);
     ops.getattr = Some(fs_getattr);
     ops.fgetattr = Some(fs_fgetattr);
     ops.access = Some(fs_access);

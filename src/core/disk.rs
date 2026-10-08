@@ -217,21 +217,30 @@ pub fn query_windows_volume_info(path: &Path) -> (u64, u64, String, String, bool
     )
 }
 
-static SYSTEM_DRIVES_CACHE: Mutex<Option<(Instant, Vec<AvailableDriveInfo>)>> =
+#[derive(Clone, Debug)]
+struct RawVolumeData {
+    letter_char: char,
+    drive_root: String,
+    volume_name: String,
+    filesystem: String,
+    total_bytes: u64,
+    free_bytes: u64,
+    used_bytes: u64,
+    used_percent: f64,
+    #[allow(dead_code)]
+    online: bool,
+}
+
+static RAW_SYSTEM_VOLUMES_CACHE: Mutex<Option<(Instant, Vec<RawVolumeData>)>> =
     Mutex::new(None);
 
-/// Discovers candidate Windows drives that can be added to the storage pool
-pub fn scan_system_drives(existing_member_paths: &[String]) -> Vec<AvailableDriveInfo> {
-    {
-        let cache = SYSTEM_DRIVES_CACHE.lock().unwrap();
-        if let Some((instant, ref list)) = *cache {
-            if instant.elapsed().as_secs() < 60 {
-                return list.clone();
-            }
-        }
-    }
+pub fn invalidate_system_drives_cache() {
+    let mut cache = RAW_SYSTEM_VOLUMES_CACHE.lock().unwrap();
+    *cache = None;
+}
 
-    let mut available = Vec::new();
+fn scan_raw_system_volumes() -> Vec<RawVolumeData> {
+    let mut volumes = Vec::new();
     let drive_mask = unsafe { GetLogicalDrives() };
 
     for i in 0..26 {
@@ -257,7 +266,7 @@ pub fn scan_system_drives(existing_member_paths: &[String]) -> Vec<AvailableDriv
             query_windows_volume_info(path);
 
         // Skip virtual pool filesystem to prevent recursion/looping
-        if filesystem.contains("PoolForge") {
+        if filesystem.contains("PoolForge") || volume_name.contains("PoolForge") {
             continue;
         }
 
@@ -269,27 +278,69 @@ pub fn scan_system_drives(existing_member_paths: &[String]) -> Vec<AvailableDriv
                 0.0
             };
 
-            let is_already_member = existing_member_paths.iter().any(|m| {
-                m.eq_ignore_ascii_case(&drive_root)
-                    || m.eq_ignore_ascii_case(&format!("{}:", letter_char))
-            });
-
-            let is_system_drive = letter_char.to_ascii_uppercase() == 'C';
-
-            available.push(AvailableDriveInfo {
-                drive_letter: format!("{}:", letter_char),
+            volumes.push(RawVolumeData {
+                letter_char,
+                drive_root,
                 volume_name,
                 filesystem,
                 total_bytes,
                 free_bytes,
                 used_bytes,
                 used_percent,
-                is_already_member,
-                is_system_drive,
+                online,
             });
         }
     }
 
-    *SYSTEM_DRIVES_CACHE.lock().unwrap() = Some((Instant::now(), available.clone()));
-    available
+    volumes
+}
+
+/// Discovers candidate Windows drives that can be added to the storage pool
+pub fn scan_system_drives(existing_member_paths: &[String]) -> Vec<AvailableDriveInfo> {
+    let raw_volumes = {
+        let mut cache = RAW_SYSTEM_VOLUMES_CACHE.lock().unwrap();
+        if let Some((instant, ref list)) = *cache {
+            if instant.elapsed().as_secs() < 15 {
+                list.clone()
+            } else {
+                let fresh = scan_raw_system_volumes();
+                *cache = Some((Instant::now(), fresh.clone()));
+                fresh
+            }
+        } else {
+            let fresh = scan_raw_system_volumes();
+            *cache = Some((Instant::now(), fresh.clone()));
+            fresh
+        }
+    };
+
+    let existing_letters: Vec<char> = existing_member_paths
+        .iter()
+        .filter_map(|p| p.trim().chars().next().map(|c| c.to_ascii_uppercase()))
+        .collect();
+
+    raw_volumes
+        .into_iter()
+        .map(|v| {
+            let is_already_member = existing_letters.contains(&v.letter_char)
+                || existing_member_paths.iter().any(|m| {
+                    m.eq_ignore_ascii_case(&v.drive_root)
+                        || m.eq_ignore_ascii_case(&format!("{}:", v.letter_char))
+                });
+
+            let is_system_drive = v.letter_char.to_ascii_uppercase() == 'C';
+
+            AvailableDriveInfo {
+                drive_letter: format!("{}:", v.letter_char),
+                volume_name: v.volume_name,
+                filesystem: v.filesystem,
+                total_bytes: v.total_bytes,
+                free_bytes: v.free_bytes,
+                used_bytes: v.used_bytes,
+                used_percent: v.used_percent,
+                is_already_member,
+                is_system_drive,
+            }
+        })
+        .collect()
 }

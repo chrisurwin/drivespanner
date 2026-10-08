@@ -113,7 +113,7 @@ impl StoragePool {
 
     pub async fn get_overview_stats(&self) -> PoolOverviewStats {
         let cfg = self.config.read().await;
-        let is_mounted = *self.is_mounted.read().await;
+        let is_mounted = crate::vfs::PoolMounter::is_mounted();
         let rep_status = self.replicator.get_status().await;
         let bal_status = self.balancer.get_status().await;
 
@@ -176,8 +176,12 @@ impl StoragePool {
     }
 
     pub async fn get_available_system_drives(&self) -> Vec<AvailableDriveInfo> {
-        let disks = self.disks.read().unwrap();
-        let existing: Vec<String> = disks.iter().map(|d| d.drive_path.to_string_lossy().to_string()).collect();
+        let mut existing: Vec<String> = {
+            let disks = self.disks.read().unwrap();
+            disks.iter().map(|d| d.drive_path.to_string_lossy().to_string()).collect()
+        };
+        let mount_point = self.config.read().await.mount_point.clone();
+        existing.push(mount_point);
         scan_system_drives(&existing)
     }
 
@@ -186,13 +190,98 @@ impl StoragePool {
         drive_path: String,
         is_landing_zone: bool,
     ) -> std::io::Result<()> {
-        let pool_id = { self.config.read().await.pool_id.clone() };
+        let clean_path = drive_path.trim().trim_end_matches(['\\', '/']).to_string();
+        let target_letter = clean_path
+            .chars()
+            .find(|c| c.is_ascii_alphabetic())
+            .unwrap_or(' ')
+            .to_ascii_uppercase();
+
+        if !target_letter.is_ascii_alphabetic() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid drive path '{}'", drive_path),
+            ));
+        }
+
+        let normalized_drive_root = format!("{}:\\", target_letter);
+
+        // 1. Check against virtual pool mount point
+        let (pool_id, mount_point) = {
+            let cfg = self.config.read().await;
+            (cfg.pool_id.clone(), cfg.mount_point.clone())
+        };
+        let mount_letter = mount_point
+            .trim()
+            .chars()
+            .find(|c| c.is_ascii_alphabetic())
+            .unwrap_or(' ')
+            .to_ascii_uppercase();
+
+        if target_letter == mount_letter {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Drive {}: is the virtual pool's mount point and cannot be added as a physical member drive",
+                    target_letter
+                ),
+            ));
+        }
+
+        // 2. Check against currently loaded member disks (in-memory)
+        {
+            let disks = self.disks.read().unwrap();
+            for d in disks.iter() {
+                let d_letter = d
+                    .drive_path
+                    .to_string_lossy()
+                    .chars()
+                    .find(|c| c.is_ascii_alphabetic())
+                    .unwrap_or(' ')
+                    .to_ascii_uppercase();
+                if target_letter == d_letter
+                    || d.drive_path
+                        .to_string_lossy()
+                        .trim_end_matches(['\\', '/'])
+                        .eq_ignore_ascii_case(&clean_path)
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!("Drive {}: is already a member of this storage pool", target_letter),
+                    ));
+                }
+            }
+        }
+
+        // 3. Check against persisted configuration member drives
+        {
+            let cfg = self.config.read().await;
+            for m in &cfg.member_drives {
+                let m_letter = m
+                    .drive_path
+                    .chars()
+                    .find(|c| c.is_ascii_alphabetic())
+                    .unwrap_or(' ')
+                    .to_ascii_uppercase();
+                if target_letter == m_letter
+                    || m.drive_path
+                        .trim_end_matches(['\\', '/'])
+                        .eq_ignore_ascii_case(&clean_path)
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!("Drive {}: is already configured in the storage pool", target_letter),
+                    ));
+                }
+            }
+        }
+
         let disk_id = Uuid::new_v4().to_string();
         let pooldata_name = format!("PoolData.{}", pool_id);
 
         let disk = MemberDisk::new(
             disk_id.clone(),
-            &drive_path,
+            &normalized_drive_root,
             &pooldata_name,
             true,
             false,
@@ -204,7 +293,7 @@ impl StoragePool {
             let mut cfg = self.config.write().await;
             cfg.member_drives.push(MemberDriveConfig {
                 id: disk_id,
-                drive_path: drive_path.clone(),
+                drive_path: normalized_drive_root.clone(),
                 pooldata_name,
                 enabled: true,
                 read_only: false,
@@ -214,7 +303,8 @@ impl StoragePool {
         }
 
         self.disks.write().unwrap().push(disk);
-        info!("Added new member disk {} to pool", drive_path);
+        crate::core::disk::invalidate_system_drives_cache();
+        info!("Added new member disk {} to pool", normalized_drive_root);
         Ok(())
     }
 
@@ -229,6 +319,7 @@ impl StoragePool {
             let _ = cfg.save_to(PoolConfig::get_config_path());
         }
 
+        crate::core::disk::invalidate_system_drives_cache();
         info!("Removed member disk {} from pool", disk_id);
         Ok(())
     }
@@ -320,5 +411,57 @@ impl StoragePool {
         });
 
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn test_cannot_add_pool_mount_point_as_member_drive() {
+        let mut cfg = PoolConfig::default();
+        cfg.mount_point = "E:".to_string();
+        let shared_cfg = Arc::new(RwLock::new(cfg));
+        let (pool, _) = StoragePool::new(shared_cfg);
+
+        // Attempting to add E: or E:\ should fail because it's the pool mount point
+        let err = pool.add_member_drive("E:".to_string(), false).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("virtual pool's mount point"));
+
+        let err2 = pool.add_member_drive("E:\\".to_string(), false).await.unwrap_err();
+        assert_eq!(err2.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[tokio::test]
+    async fn test_cannot_add_duplicate_member_drive() {
+        let mut cfg = PoolConfig::default();
+        cfg.mount_point = "V:".to_string();
+        let shared_cfg = Arc::new(RwLock::new(cfg));
+        let (pool, _) = StoragePool::new(shared_cfg);
+
+        // Preload D:\ in member_drives
+        {
+            let mut c = pool.config.write().await;
+            c.member_drives.push(crate::config::MemberDriveConfig {
+                id: "test-disk-1".to_string(),
+                drive_path: "D:\\".to_string(),
+                pooldata_name: "PoolData.test".to_string(),
+                enabled: true,
+                read_only: false,
+                is_landing_zone: false,
+            });
+        }
+
+        // Attempting to add D: again must fail with AlreadyExists
+        let err = pool.add_member_drive("D:".to_string(), false).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert!(err.to_string().contains("already configured"));
+
+        let err2 = pool.add_member_drive("d:\\".to_string(), false).await.unwrap_err();
+        assert_eq!(err2.kind(), std::io::ErrorKind::AlreadyExists);
     }
 }

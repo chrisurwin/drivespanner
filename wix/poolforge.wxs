@@ -18,9 +18,12 @@
 
         <MediaTemplate EmbedCab="yes" />
 
-        <!-- Application and Installer Icons -->
+        <!-- Application and Installer Icons & ARP Properties -->
         <Icon Id="poolforge.ico" SourceFile="$(var.SourceDir)\poolforge.ico" />
         <Property Id="ARPPRODUCTICON" Value="poolforge.ico" />
+        <Property Id="ARPHELPLINK" Value="https://github.com/chrisurwin/poolforge" />
+        <Property Id="ARPURLINFOABOUT" Value="https://github.com/chrisurwin/poolforge" />
+        <Property Id="ARPCOMMENTS" Value="High-Performance Windows Storage Pool Service with file replication and drive balancing" />
 
         <!-- Installer Branding Bitmaps and License Agreement -->
         <WixVariable Id="WixUIBannerBmp" Value="$(var.SourceDir)\banner.bmp" />
@@ -44,10 +47,12 @@
         <Binary Id="ValidateDriveScript" SourceFile="$(var.SourceDir)\validate_drive.js" />
         <CustomAction Id="InitDriveLetterAction" BinaryKey="ValidateDriveScript" JScriptCall="InitDriveLetter" Execute="immediate" Return="check" />
         <CustomAction Id="ValidateDriveLetterAction" BinaryKey="ValidateDriveScript" JScriptCall="ValidateDriveLetter" Execute="immediate" Return="check" />
-        <CustomAction Id="ApplyConfigDriveLetterAction" BinaryKey="ValidateDriveScript" JScriptCall="ApplyConfigDriveLetter" Execute="immediate" Return="check" />
+        <CustomAction Id="SetApplyConfigData" Property="ApplyConfigDriveLetterAction" Value="[INSTALLFOLDER]|[POOL_DRIVE_LETTER]" />
+        <CustomAction Id="ApplyConfigDriveLetterAction" BinaryKey="ValidateDriveScript" JScriptCall="ApplyConfigDriveLetter" Execute="deferred" Impersonate="no" Return="ignore" />
         <CustomAction Id="InstallWinFspAction" BinaryKey="ValidateDriveScript" JScriptCall="InstallWinFsp" Execute="immediate" Return="check" />
         <CustomAction Id="OpenWinFspUrlAction" BinaryKey="ValidateDriveScript" JScriptCall="OpenWinFspUrl" Execute="immediate" Return="check" />
         <CustomAction Id="CheckWinFspStatusAction" BinaryKey="ValidateDriveScript" JScriptCall="CheckWinFspStatus" Execute="immediate" Return="check" />
+
 
         <!-- Directory Structure: Install to %ProgramFiles%\PoolForge -->
         <Directory Id="TARGETDIR" Name="SourceDir">
@@ -77,12 +82,12 @@
                                 ErrorControl="normal"
                                 Arguments="service run" />
 
-                <!-- Service Lifecycle: Start on install, stop on update/uninstall, delete on uninstall -->
+                <!-- Service Lifecycle: Start on install, stop on update/uninstall, delete on uninstall/upgrade -->
                 <ServiceControl Id="PoolForgeServiceControl"
                                 Name="PoolForgeService"
                                 Start="install"
                                 Stop="both"
-                                Remove="uninstall"
+                                Remove="both"
                                 Wait="yes" />
             </Component>
 
@@ -98,6 +103,17 @@
                 <File Id="CheckWinFspScript"
                       Source="$(var.SourceDir)\check_winfsp.ps1"
                       KeyPath="yes" />
+            </Component>
+
+            <!-- Uninstall Shortcut in Program Files Directory -->
+            <Component Id="ProgramFilesUninstallShortcut" Guid="7C3F8B2D-91E4-4C23-B245-A67E824F315D" Win64="yes">
+                <Shortcut Id="UninstallInProgramFiles"
+                          Name="Uninstall PoolForge"
+                          Description="Uninstalls PoolForge Storage Service from this computer"
+                          Target="[System64Folder]msiexec.exe"
+                          Arguments="/x [ProductCode]"
+                          Icon="poolforge.ico" />
+                <CreateFolder />
             </Component>
         </DirectoryRef>
 
@@ -117,6 +133,12 @@
                           Arguments="status"
                           WorkingDirectory="INSTALLFOLDER"
                           Icon="poolforge.ico" />
+                <Shortcut Id="UninstallShortcut"
+                          Name="Uninstall PoolForge"
+                          Description="Uninstalls PoolForge Storage Service from this computer"
+                          Target="[System64Folder]msiexec.exe"
+                          Arguments="/x [ProductCode]"
+                          Icon="poolforge.ico" />
                 <RemoveFolder Id="CleanUpShortCut" Directory="ApplicationProgramsFolder" On="uninstall" />
                 <RegistryValue Root="HKLM" Key="Software\PoolForge" Name="installed" Type="integer" Value="1" KeyPath="yes" />
             </Component>
@@ -127,14 +149,38 @@
             <ComponentRef Id="PoolForgeServiceComponent" />
             <ComponentRef Id="PoolForgeConfigComponent" />
             <ComponentRef Id="WinFspPrereqScript" />
+            <ComponentRef Id="ProgramFilesUninstallShortcut" />
             <ComponentRef Id="ApplicationShortcut" />
         </Feature>
 
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
         <!-- Custom User Interface Flow with Drive Letter Selection and Validation -->
-        <UI>
-            <UIRef Id="WixUI_InstallDir" />
+        <UI Id="WixUI_PoolForge">
+            <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+            <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+            <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+
+            <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+            <Property Id="WixUI_Mode" Value="InstallDir" />
+
+            <DialogRef Id="BrowseDlg" />
+            <DialogRef Id="DiskCostDlg" />
+            <DialogRef Id="ErrorDlg" />
+            <DialogRef Id="FatalError" />
+            <DialogRef Id="FilesInUse" />
+            <DialogRef Id="MsiRMFilesInUse" />
+            <DialogRef Id="PrepareDlg" />
+            <DialogRef Id="ProgressDlg" />
+            <DialogRef Id="ResumeDlg" />
+            <DialogRef Id="UserExit" />
+            <DialogRef Id="WelcomeDlg" />
+            <DialogRef Id="LicenseAgreementDlg" />
+            <DialogRef Id="InstallDirDlg" />
+            <DialogRef Id="VerifyReadyDlg" />
+            <DialogRef Id="MaintenanceWelcomeDlg" />
+            <DialogRef Id="MaintenanceTypeDlg" />
+            <DialogRef Id="InvalidDirDlg" />
 
             <Dialog Id="PoolDriveLetterDlg" Width="370" Height="270" Title="[ProductName] Setup">
                 <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
@@ -206,18 +252,54 @@
                 </Control>
             </Dialog>
 
-            <!-- Hook custom dialogs into the WixUI_InstallDir navigation sequence -->
+            <!-- WelcomeDlg navigation -->
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg">NOT Installed</Publish>
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">Installed AND NOT PATCH</Publish>
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">Installed AND PATCH</Publish>
+
+            <!-- LicenseAgreementDlg navigation -->
+            <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg">1</Publish>
             <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="WinFspPrereqDlg" Order="2">NOT Installed AND NOT WINFSP_INSTALLED AND NOT WINFSP_INSTALLED_WOW64 AND NOT (SKIP_WINFSP_CHECK = "1")</Publish>
             <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="3">Installed OR WINFSP_INSTALLED OR WINFSP_INSTALLED_WOW64 OR (SKIP_WINFSP_CHECK = "1")</Publish>
 
+
+            <!-- InstallDirDlg navigation: Strictly routes Next to PoolDriveLetterDlg -->
             <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WinFspPrereqDlg" Order="1">NOT Installed AND NOT WINFSP_INSTALLED AND NOT WINFSP_INSTALLED_WOW64 AND NOT (SKIP_WINFSP_CHECK = "1")</Publish>
             <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="2">Installed OR WINFSP_INSTALLED OR WINFSP_INSTALLED_WOW64 OR (SKIP_WINFSP_CHECK = "1")</Publish>
-
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1">1</Publish>
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="WixUIValidatePath" Order="2">NOT WIXUI_DONTVALIDATEPATH</Publish>
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidDirDlg" Order="3"><![CDATA[NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID<>"1"]]></Publish>
             <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="PoolDriveLetterDlg" Order="4">WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID="1"</Publish>
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1">1</Publish>
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2">1</Publish>
+
+            <!-- BrowseDlg navigation -->
+            <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath" Order="1">1</Publish>
+            <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="2"><![CDATA[NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID<>"1"]]></Publish>
+
+            <!-- VerifyReadyDlg navigation: Back strictly routes to PoolDriveLetterDlg for new installs -->
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PoolDriveLetterDlg" Order="1">NOT Installed</Publish>
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">Installed AND NOT PATCH</Publish>
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3">Installed AND PATCH</Publish>
+
+            <!-- Maintenance dialog navigation -->
+            <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg">1</Publish>
+            <Publish Dialog="MaintenanceTypeDlg" Control="ChangeButton" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+            <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+            <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+            <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg">1</Publish>
         </UI>
 
+        <UIRef Id="WixUI_PoolForge" />
         <UIRef Id="WixUI_ErrorProgressText" />
+
+        <!-- Elevated deferred action to stop and delete any pre-existing PoolForgeService before InstallServices runs -->
+        <CustomAction Id="CleanupExistingServiceAction"
+                      Directory="TARGETDIR"
+                      ExeCommand="cmd.exe /c &quot;net.exe stop PoolForgeService &amp; sc.exe delete PoolForgeService&quot;"
+                      Execute="deferred"
+                      Impersonate="no"
+                      Return="ignore" />
 
         <!-- Initialize candidate drive letter on installer UI startup -->
         <InstallUISequence>
@@ -226,8 +308,11 @@
 
         <!-- Apply chosen drive letter to config.json before starting the Windows service -->
         <InstallExecuteSequence>
+            <Custom Action="CleanupExistingServiceAction" Before="InstallServices">NOT Installed OR REINSTALL</Custom>
+            <Custom Action="SetApplyConfigData" Before="ApplyConfigDriveLetterAction">NOT Installed</Custom>
             <Custom Action="ApplyConfigDriveLetterAction" After="InstallFiles">NOT Installed</Custom>
         </InstallExecuteSequence>
+
 
     </Product>
 </Wix>

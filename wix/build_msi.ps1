@@ -110,7 +110,7 @@ $wixObj = Join-Path $projectRoot "target\poolforge.wixobj"
 $outputMsi = Join-Path (Join-Path $projectRoot $OutputDir) "PoolForge-$Version-Setup.msi"
 
 Write-Host "Compiling WiX source: $wxsFile..."
-$candleOutput = & $candlePath "-ext" "WixUIExtension" "-dVersion=$Version" "-dSourceDir=$stagingDir" "-out" $wixObj $wxsFile 2>&1
+$candleOutput = & $candlePath "-ext" "WixUIExtension" "-arch" "x64" "-dVersion=$Version" "-dSourceDir=$stagingDir" "-out" $wixObj $wxsFile 2>&1
 $candleOutput | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Candle compilation failed with code $LASTEXITCODE"

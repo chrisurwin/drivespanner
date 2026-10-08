@@ -436,10 +436,46 @@
                                     <span class="info-key">Storage Architecture:</span>
                                     <span class="info-val">Single-file whole persistence</span>
                                 </div>
+                        <div class="card">
+                            <h3>Virtual Drive Letter Configuration</h3>
+                            <p class="card-desc">Assign the Windows drive letter where the unified virtual pool is mounted in File Explorer.</p>
+                            <div class="info-list" style="margin-bottom: 16px;">
                                 <div class="info-row">
-                                    <span class="info-key">Replication Policy:</span>
-                                    <span class="info-val">Strict physical segregation</span>
+                                    <span class="info-key">Configured Drive:</span>
+                                    <span class="info-val highlight" id="service-cfg-mount-val">V:\</span>
                                 </div>
+                                <div class="info-row">
+                                    <span class="info-key">Mount Status:</span>
+                                    <span class="info-val" id="service-cfg-mount-status">Unmounted</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="select-pool-drive-letter" class="select-field" style="max-width: 130px;">
+                                    <option value="D:">Drive D:</option>
+                                    <option value="E:">Drive E:</option>
+                                    <option value="F:">Drive F:</option>
+                                    <option value="G:">Drive G:</option>
+                                    <option value="H:">Drive H:</option>
+                                    <option value="I:">Drive I:</option>
+                                    <option value="J:">Drive J:</option>
+                                    <option value="K:">Drive K:</option>
+                                    <option value="L:">Drive L:</option>
+                                    <option value="M:">Drive M:</option>
+                                    <option value="N:">Drive N:</option>
+                                    <option value="O:">Drive O:</option>
+                                    <option value="P:">Drive P:</option>
+                                    <option value="Q:">Drive Q:</option>
+                                    <option value="R:">Drive R:</option>
+                                    <option value="S:">Drive S:</option>
+                                    <option value="T:">Drive T:</option>
+                                    <option value="U:">Drive U:</option>
+                                    <option value="V:" selected>Drive V:</option>
+                                    <option value="W:">Drive W:</option>
+                                    <option value="X:">Drive X:</option>
+                                    <option value="Y:">Drive Y:</option>
+                                    <option value="Z:">Drive Z:</option>
+                                </select>
+                                <button class="btn btn-outline" id="btn-save-mount-letter">Apply Drive Letter</button>
                             </div>
                         </div>
                     </div>

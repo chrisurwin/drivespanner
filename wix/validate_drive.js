@@ -86,14 +86,26 @@ function ValidateDriveLetter() {
 
 function ApplyConfigDriveLetter() {
     try {
-        var installFolder = Session.Property("CustomActionData");
+        var installFolder = "";
+        var targetLetter = "V:";
+
+        var cad = Session.Property("CustomActionData");
+        if (cad && cad !== "") {
+            var parts = cad.split("|");
+            installFolder = parts[0];
+            if (parts.length > 1 && parts[1] !== "") {
+                targetLetter = parts[1];
+            }
+        }
+
         if (!installFolder || installFolder === "") {
             installFolder = Session.Property("INSTALLFOLDER");
         }
-
-        var targetLetter = Session.Property("POOL_DRIVE_LETTER");
-        if (!targetLetter || targetLetter === "") {
-            targetLetter = "V:";
+        if (!targetLetter || targetLetter === "V:") {
+            var propLetter = Session.Property("POOL_DRIVE_LETTER");
+            if (propLetter && propLetter !== "") {
+                targetLetter = propLetter;
+            }
         }
 
         if (!installFolder || installFolder === "") {
@@ -126,18 +138,44 @@ function ApplyConfigDriveLetter() {
 function InstallWinFsp() {
     try {
         var shell = new ActiveXObject("WScript.Shell");
-        var script = "$url = 'https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi'; " +
-            "$tmp = Join-Path $env:TEMP 'winfsp-installer.msi'; " +
-            "Write-Host 'Downloading WinFsp prerequisite...' -ForegroundColor Cyan; " +
-            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " +
-            "Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing; " +
-            "Write-Host 'Installing WinFsp silently...' -ForegroundColor Green; " +
-            "$proc = Start-Process msiexec.exe -ArgumentList '/i `\"' + $tmp + '`\" /passive' -Wait -PassThru; " +
-            "Remove-Item $tmp -Force -ErrorAction SilentlyContinue; " +
-            "Write-Host 'WinFsp installation completed!' -ForegroundColor Green";
+        var fso = new ActiveXObject("Scripting.FileSystemObject");
+        var tempFolder = shell.ExpandEnvironmentStrings("%TEMP%");
+        var ps1File = fso.BuildPath(tempFolder, "install_winfsp.ps1");
 
-        var cmd = "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"" + script + "\"";
+        var ts = fso.OpenTextFile(ps1File, 2, true); // ForWriting
+        ts.WriteLine("$ErrorActionPreference = 'Stop'");
+        ts.WriteLine("try {");
+        ts.WriteLine("    Write-Host '==================================================' -ForegroundColor Cyan");
+        ts.WriteLine("    Write-Host '   PoolForge Prerequisite: Installing WinFsp' -ForegroundColor Cyan");
+        ts.WriteLine("    Write-Host '==================================================' -ForegroundColor Cyan");
+        ts.WriteLine("    $url = 'https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi'");
+        ts.WriteLine("    $dest = Join-Path $env:TEMP 'winfsp-installer.msi'");
+        ts.WriteLine("    Write-Host 'Downloading WinFsp 2.0 package from GitHub...' -ForegroundColor Yellow");
+        ts.WriteLine("    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12");
+        ts.WriteLine("    (New-Object System.Net.WebClient).DownloadFile($url, $dest)");
+        ts.WriteLine("    Write-Host 'Download complete. Installing WinFsp silently...' -ForegroundColor Green");
+        ts.WriteLine("    $proc = Start-Process msiexec.exe -ArgumentList ('/i \"' + $dest + '\" /passive /norestart') -Wait -PassThru");
+        ts.WriteLine("    if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {");
+        ts.WriteLine("        Write-Host 'WinFsp installed successfully!' -ForegroundColor Green");
+        ts.WriteLine("        Start-Sleep -Seconds 2");
+        ts.WriteLine("    } else {");
+        ts.WriteLine("        Write-Host ('WinFsp installation returned code ' + $proc.ExitCode) -ForegroundColor Red");
+        ts.WriteLine("        Write-Host 'Press Enter to continue...' -ForegroundColor Yellow");
+        ts.WriteLine("        Read-Host");
+        ts.WriteLine("    }");
+        ts.WriteLine("} catch {");
+        ts.WriteLine("    Write-Host ('Error: ' + $_.Exception.Message) -ForegroundColor Red");
+        ts.WriteLine("    Write-Host 'Press Enter to continue...' -ForegroundColor Yellow");
+        ts.WriteLine("    Read-Host");
+        ts.WriteLine("} finally {");
+        ts.WriteLine("    Remove-Item (Join-Path $env:TEMP 'winfsp-installer.msi') -Force -ErrorAction SilentlyContinue");
+        ts.WriteLine("}");
+        ts.Close();
+
+        var cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" + ps1File + "\"";
         shell.Run(cmd, 1, true);
+
+        try { fso.DeleteFile(ps1File); } catch (e) {}
 
         CheckWinFspStatus();
     } catch (e) {
@@ -157,9 +195,26 @@ function OpenWinFspUrl() {
 function CheckWinFspStatus() {
     try {
         var fso = new ActiveXObject("Scripting.FileSystemObject");
+        var shell = new ActiveXObject("WScript.Shell");
+        var installed = false;
+
         var p1 = "C:\\Program Files (x86)\\WinFsp\\bin\\winfsp-x64.dll";
         var p2 = "C:\\Program Files\\WinFsp\\bin\\winfsp-x64.dll";
         if (fso.FileExists(p1) || fso.FileExists(p2)) {
+            installed = true;
+        }
+
+        try {
+            var reg = shell.RegRead("HKLM\\SOFTWARE\\WinFsp\\InstallDir");
+            if (reg && reg !== "") installed = true;
+        } catch(e) {}
+
+        try {
+            var regWow = shell.RegRead("HKLM\\SOFTWARE\\WOW6432Node\\WinFsp\\InstallDir");
+            if (regWow && regWow !== "") installed = true;
+        } catch(e) {}
+
+        if (installed) {
             Session.Property("WINFSP_INSTALLED") = "1";
             Session.Property("WINFSP_STATUS_TEXT") = "WinFsp is installed and ready.";
         } else {

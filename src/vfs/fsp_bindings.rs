@@ -147,12 +147,25 @@ pub type FuseMainRealFn = unsafe extern "C" fn(
 
 pub type FuseExitFn = unsafe extern "C" fn(f: *mut c_void);
 
+#[repr(C)]
+pub struct FuseContext {
+    pub fuse: *mut c_void,
+    pub uid: u32,
+    pub gid: u32,
+    pub pid: u32,
+    pub private_data: *mut c_void,
+    pub umask: u32,
+}
+
+pub type FuseGetContextFn = unsafe extern "C" fn() -> *mut FuseContext;
+
 pub struct WinFspDll {
     #[allow(dead_code)]
     pub handle: *mut c_void,
     pub fuse_main_real: FuseMainRealFn,
     #[allow(dead_code)]
     pub fuse_exit: Option<FuseExitFn>,
+    pub fuse_get_context: Option<FuseGetContextFn>,
 }
 
 unsafe impl Send for WinFspDll {}
@@ -199,10 +212,15 @@ impl WinFspDll {
         let fuse_exit_proc = unsafe { GetProcAddress(module, fuse_exit_sym.as_ptr() as *const u8) };
         let fuse_exit: Option<FuseExitFn> = fuse_exit_proc.map(|p| unsafe { mem::transmute(p) });
 
+        let fuse_get_context_sym = CString::new("fuse_get_context").unwrap();
+        let fuse_get_context_proc = unsafe { GetProcAddress(module, fuse_get_context_sym.as_ptr() as *const u8) };
+        let fuse_get_context: Option<FuseGetContextFn> = fuse_get_context_proc.map(|p| unsafe { mem::transmute(p) });
+
         let boxed = Box::new(WinFspDll {
             handle: module,
             fuse_main_real,
             fuse_exit,
+            fuse_get_context,
         });
 
         let raw = Box::into_raw(boxed);
