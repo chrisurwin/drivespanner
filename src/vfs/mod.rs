@@ -95,7 +95,7 @@ impl PoolMounter {
             .to_ascii_uppercase();
         let target_mount = format!("{}:", letter);
 
-        info!("Starting PoolForge mount worker on {}", target_mount);
+        info!("Starting DriveSpanner mount worker on {}", target_mount);
 
         let rt = match tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -129,9 +129,9 @@ impl PoolMounter {
 
         init_fs_globals(pool_arc, Some(rt.handle().clone()));
 
-        let opt_str = "FileSystemName=PoolForge,volname=PoolForge,FileInfoTimeout=5000,DirInfoTimeout=5000,VolumeInfoTimeout=10000,ThreadCount=16".to_string();
+        let opt_str = "FileSystemName=DriveSpanner,volname=DriveSpanner,FileInfoTimeout=5000,DirInfoTimeout=5000,VolumeInfoTimeout=10000,ThreadCount=16".to_string();
         let args_strings = vec![
-            "poolforge".to_string(),
+            "drivespanner".to_string(),
             target_mount.clone(),
             "-f".to_string(),
             "-o".to_string(),
@@ -197,7 +197,7 @@ impl PoolMounter {
         }
 
         let exe_path = std::env::current_exe()
-            .map_err(|e| format!("Failed to locate poolforge executable: {}", e))?;
+            .map_err(|e| format!("Failed to locate drivespanner executable: {}", e))?;
 
         info!("Starting mount worker on {} with {:?}", target_mount, exe_path);
 

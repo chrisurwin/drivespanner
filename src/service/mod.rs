@@ -13,19 +13,19 @@ use windows_service::{
     service_dispatcher,
 };
 
-pub const SERVICE_NAME: &str = "PoolForgeService";
-pub const SERVICE_DISPLAY_NAME: &str = "PoolForge Storage Service";
+pub const SERVICE_NAME: &str = "DriveSpannerService";
+pub const SERVICE_DISPLAY_NAME: &str = "DriveSpanner Storage Service";
 
 pub fn run_service() -> Result<(), Box<dyn std::error::Error>> {
     service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
     Ok(())
 }
 
-define_windows_service!(ffi_service_main, poolforge_service_main);
+define_windows_service!(ffi_service_main, drivespanner_service_main);
 
-fn poolforge_service_main(_arguments: Vec<OsString>) {
+fn drivespanner_service_main(_arguments: Vec<OsString>) {
     if let Err(e) = run_service_impl() {
-        error!("PoolForge Windows Service encountered fatal error: {}", e);
+        error!("DriveSpanner Windows Service encountered fatal error: {}", e);
     }
 }
 
@@ -55,7 +55,7 @@ fn run_service_impl() -> Result<(), Box<dyn std::error::Error>> {
         process_id: None,
     })?;
 
-    info!("PoolForge Windows Service registered and reported RUNNING to SCM.");
+    info!("DriveSpanner Windows Service registered and reported RUNNING to SCM.");
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -71,7 +71,7 @@ fn run_service_impl() -> Result<(), Box<dyn std::error::Error>> {
 
     rt.block_on(async {
         if let Err(e) = crate::async_main(Some(tokio_stop_rx)).await {
-            error!("PoolForge daemon error: {}", e);
+            error!("DriveSpanner daemon error: {}", e);
         }
     });
 
@@ -86,7 +86,7 @@ fn run_service_impl() -> Result<(), Box<dyn std::error::Error>> {
         process_id: None,
     });
 
-    info!("PoolForge Windows Service stopped cleanly.");
+    info!("DriveSpanner Windows Service stopped cleanly.");
     Ok(())
 }
 
@@ -121,7 +121,7 @@ impl ServiceManager {
                 .args(&[
                     "description",
                     SERVICE_NAME,
-                    "PoolForge - High-performance storage pooling and replication engine for Windows.",
+                    "DriveSpanner - High-performance storage pooling and replication engine for Windows.",
                 ])
                 .output();
             Ok(())

@@ -80,7 +80,7 @@ impl UpdateChecker {
             std::process::Command::new("curl.exe")
                 .arg("-s")
                 .arg("-H")
-                .arg("User-Agent: PoolForge-Updater")
+                .arg("User-Agent: DriveSpanner-Updater")
                 .arg("-H")
                 .arg("Accept: application/vnd.github.v3+json")
                 .arg("--max-time")
@@ -119,7 +119,7 @@ impl UpdateChecker {
 
                         st.update_available = is_newer;
                         st.latest_version = clean_tag.to_string();
-                        st.release_name = rel.name.unwrap_or_else(|| format!("PoolForge v{}", clean_tag));
+                        st.release_name = rel.name.unwrap_or_else(|| format!("DriveSpanner v{}", clean_tag));
                         st.release_url = rel.html_url.unwrap_or_default();
                         st.release_notes = rel.body.unwrap_or_default();
                         st.published_at = rel.published_at.unwrap_or_default();
@@ -129,7 +129,7 @@ impl UpdateChecker {
                         if is_newer {
                             info!("Update available: v{} (current is v{})", clean_tag, current_ver);
                         } else {
-                            info!("PoolForge is up-to-date (v{})", current_ver);
+                            info!("DriveSpanner is up-to-date (v{})", current_ver);
                         }
                     }
                     Err(e) => {

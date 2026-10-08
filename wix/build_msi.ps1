@@ -1,6 +1,6 @@
-# PoolForge WiX MSI Build Automation Script
+# DriveSpanner WiX MSI Build Automation Script
 param (
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.2",
     [string]$SourceDir = "",
     [string]$OutputDir = "target\installer"
 )
@@ -19,7 +19,7 @@ if ([string]::IsNullOrEmpty($SourceDir)) {
     )
 
     foreach ($dir in $possibleSources) {
-        if (Test-Path (Join-Path $dir "poolforge.exe")) {
+        if (Test-Path (Join-Path $dir "drivespanner.exe")) {
             $SourceDir = $dir
             break
         }
@@ -30,21 +30,21 @@ if ([string]::IsNullOrEmpty($SourceDir)) {
     }
 }
 
-if (-not (Test-Path (Join-Path $SourceDir "poolforge.exe"))) {
-    Write-Error "Could not find poolforge.exe in '$SourceDir'. Run 'cargo build --release' first."
+if (-not (Test-Path (Join-Path $SourceDir "drivespanner.exe"))) {
+    Write-Error "Could not find drivespanner.exe in '$SourceDir'. Run 'cargo build --release' first."
     exit 1
 }
 
 Write-Host "Using binary source directory: $SourceDir"
 
-# Copy default config and helper script into staging area if not present
+# Copy default config and helper script into staging area
 $stagingDir = Join-Path $projectRoot "target\wix_staging"
 New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
-Copy-Item (Join-Path $SourceDir "poolforge.exe") (Join-Path $stagingDir "poolforge.exe") -Force
+Copy-Item (Join-Path $SourceDir "drivespanner.exe") (Join-Path $stagingDir "drivespanner.exe") -Force
 Copy-Item (Join-Path $scriptDir "default_config.json") (Join-Path $stagingDir "config.json") -Force
 Copy-Item (Join-Path $scriptDir "check_winfsp.ps1") (Join-Path $stagingDir "check_winfsp.ps1") -Force
 Copy-Item (Join-Path $scriptDir "validate_drive.js") (Join-Path $stagingDir "validate_drive.js") -Force
-Copy-Item (Join-Path $scriptDir "poolforge.ico") (Join-Path $stagingDir "poolforge.ico") -Force
+Copy-Item (Join-Path $scriptDir "drivespanner.ico") (Join-Path $stagingDir "drivespanner.ico") -Force
 Copy-Item (Join-Path $scriptDir "banner.bmp") (Join-Path $stagingDir "banner.bmp") -Force
 Copy-Item (Join-Path $scriptDir "dialog.bmp") (Join-Path $stagingDir "dialog.bmp") -Force
 Copy-Item (Join-Path $scriptDir "License.rtf") (Join-Path $stagingDir "License.rtf") -Force
@@ -105,9 +105,9 @@ $wixDir = Split-Path -Parent $candlePath
 $lightPath = Join-Path $wixDir "light.exe"
 
 New-Item -ItemType Directory -Force -Path (Join-Path $projectRoot $OutputDir) | Out-Null
-$wxsFile = Join-Path $scriptDir "poolforge.wxs"
-$wixObj = Join-Path $projectRoot "target\poolforge.wixobj"
-$outputMsi = Join-Path (Join-Path $projectRoot $OutputDir) "PoolForge-$Version-Setup.msi"
+$wxsFile = Join-Path $scriptDir "drivespanner.wxs"
+$wixObj = Join-Path $projectRoot "target\drivespanner.wixobj"
+$outputMsi = Join-Path (Join-Path $projectRoot $OutputDir) "DriveSpanner-$Version-Setup.msi"
 
 Write-Host "Compiling WiX source: $wxsFile..."
 $candleOutput = & $candlePath "-ext" "WixUIExtension" "-arch" "x64" "-dVersion=$Version" "-dSourceDir=$stagingDir" "-out" $wixObj $wxsFile 2>&1

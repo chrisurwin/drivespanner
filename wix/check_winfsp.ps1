@@ -1,4 +1,4 @@
-# PoolForge WinFsp Prerequisite Installer
+# DriveSpanner WinFsp Prerequisite Installer
 param (
     [switch]$Silent = $false
 )
@@ -41,8 +41,8 @@ $shouldInstall = $true
 
 if (-not $Silent) {
     Add-Type -AssemblyName PresentationFramework
-    $msg = "PoolForge requires the WinFsp kernel driver for virtual filesystem mounting.`n`nWould you like to automatically download and install WinFsp now?"
-    $title = "PoolForge Prerequisites - WinFsp Required"
+    $msg = "DriveSpanner requires the WinFsp kernel driver for virtual filesystem mounting.`n`nWould you like to automatically download and install WinFsp now?"
+    $title = "DriveSpanner Prerequisites - WinFsp Required"
     $result = [System.Windows.MessageBox]::Show($msg, $title, [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
 
     if ($result -ne [System.Windows.MessageBoxResult]::Yes) {

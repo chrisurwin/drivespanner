@@ -101,7 +101,7 @@ fn default_true() -> bool {
 }
 
 fn default_github_repo() -> String {
-    "chris/poolforge".to_string()
+    "chrisurwin/drivespanner".to_string()
 }
 
 fn default_check_interval() -> u64 {
@@ -123,7 +123,7 @@ impl Default for PoolConfig {
         let pool_id = Uuid::new_v4().to_string();
         Self {
             pool_id: pool_id.clone(),
-            pool_name: "PoolForge Storage".to_string(),
+            pool_name: "DriveSpanner Storage".to_string(),
             mount_point: "V:".to_string(),
             member_drives: Vec::new(),
             replication: ReplicationConfig {
@@ -175,11 +175,11 @@ impl PoolConfig {
 
         let prog_files_path = std::env::var("ProgramFiles")
             .ok()
-            .map(|pf| PathBuf::from(pf).join("PoolForge").join("config.json"));
+            .map(|pf| PathBuf::from(pf).join("DriveSpanner").join("config.json"));
 
         let prog_data_path = std::env::var("ProgramData")
             .ok()
-            .map(|pd| PathBuf::from(pd).join("PoolForge").join("config.json"));
+            .map(|pd| PathBuf::from(pd).join("DriveSpanner").join("config.json"));
 
         // 1. Check next to executable if not System32
         if let Some(ref dir) = exe_dir {
@@ -190,17 +190,35 @@ impl PoolConfig {
             }
         }
 
-        // 2. Check Program Files
+        // 2. Check Program Files DriveSpanner
         if let Some(ref p) = prog_files_path {
             if p.exists() {
                 return p.clone();
             }
         }
 
-        // 3. Check ProgramData
+        // 3. Check ProgramData DriveSpanner
         if let Some(ref p) = prog_data_path {
             if p.exists() {
                 return p.clone();
+            }
+        }
+
+        // Legacy migration: Check legacy PoolForge paths if DriveSpanner config doesn't exist yet
+        let legacy_pf = std::env::var("ProgramFiles")
+            .ok()
+            .map(|pf| PathBuf::from(pf).join("PoolForge").join("config.json"));
+        if let Some(ref lp) = legacy_pf {
+            if lp.exists() {
+                if let Some(ref target) = prog_files_path {
+                    if let Some(parent) = target.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if std::fs::copy(lp, target).is_ok() {
+                        return target.clone();
+                    }
+                }
+                return lp.clone();
             }
         }
 

@@ -35,42 +35,42 @@ fn main() {
             let subcmd = args.get(2).map(|s| s.as_str()).unwrap_or("help");
             match subcmd {
                 "run" => {
-                    info!("Starting PoolForge Windows Service dispatcher...");
+                    info!("Starting DriveSpanner Windows Service dispatcher...");
                     if let Err(e) = service::run_service() {
                         error!("Windows Service error: {}", e);
                     }
                 }
                 "install" => {
-                    info!("Installing PoolForge Windows Service...");
+                    info!("Installing DriveSpanner Windows Service...");
                     if let Err(e) = ServiceManager::install() {
                         error!("Service install error: {}", e);
                     }
                 }
                 "uninstall" => {
-                    info!("Uninstalling PoolForge Windows Service...");
+                    info!("Uninstalling DriveSpanner Windows Service...");
                     if let Err(e) = ServiceManager::uninstall() {
                         error!("Service uninstall error: {}", e);
                     }
                 }
                 "start" => {
-                    info!("Starting PoolForge Windows Service...");
+                    info!("Starting DriveSpanner Windows Service...");
                     if let Err(e) = ServiceManager::start() {
                         error!("Service start error: {}", e);
                     }
                 }
                 "stop" => {
-                    info!("Stopping PoolForge Windows Service...");
+                    info!("Stopping DriveSpanner Windows Service...");
                     if let Err(e) = ServiceManager::stop() {
                         error!("Service stop error: {}", e);
                     }
                 }
                 _ => {
-                    println!("Usage: poolforge service [run | install | uninstall | start | stop]");
+                    println!("Usage: drivespanner service [run | install | uninstall | start | stop]");
                 }
             }
         }
         "uninstall" => {
-            println!("Uninstalling PoolForge Storage Service...");
+            println!("Uninstalling DriveSpanner Storage Service...");
             info!("Stopping and removing Windows Service...");
             if let Err(e) = ServiceManager::uninstall() {
                 warn!("Service uninstall note: {}", e);
@@ -78,12 +78,12 @@ fn main() {
             println!("Service uninstalled successfully.");
             println!("Launching Windows Installer removal...");
             let _ = std::process::Command::new("msiexec.exe")
-                .args(&["/x", "{8FA9C82A-C1A5-42E1-A88E-3BC3B22E42B1}"])
+                .args(&["/x", "{C8B72D45-6F01-4A59-B3C5-18A375E9D28B}"])
                 .spawn();
         }
         "set-mount" => {
             if args.len() < 3 {
-                println!("Usage: poolforge set-mount <LETTER>");
+                println!("Usage: drivespanner set-mount <LETTER>");
                 return;
             }
             let raw = &args[2];
@@ -140,7 +140,7 @@ fn main() {
                 let disks = pool.get_member_disks_stats().await;
                 if disks.is_empty() {
                     println!("  No member drives configured. Add drives via:");
-                    println!("  poolforge add D:\\\n");
+                    println!("  drivespanner add D:\\\n");
                 } else {
                     println!("  MEMBER DRIVES:");
                     for d in disks {
@@ -161,7 +161,7 @@ fn main() {
         }
         "add" => {
             if args.len() < 3 {
-                println!("Usage: poolforge add <DRIVE_PATH> [--landing-zone]");
+                println!("Usage: drivespanner add <DRIVE_PATH> [--landing-zone]");
                 return;
             }
             let drive_path = args[2].clone();
@@ -195,7 +195,7 @@ fn main() {
         }
         "run" => {
             print_banner();
-            info!("Starting PoolForge daemon in foreground...");
+            info!("Starting DriveSpanner daemon in foreground...");
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -206,7 +206,7 @@ fn main() {
             }
         }
         unknown => {
-            eprintln!("Unknown command: '{}'. Run 'poolforge help' for usage.", unknown);
+            eprintln!("Unknown command: '{}'. Run 'drivespanner help' for usage.", unknown);
         }
     }
 }
@@ -245,11 +245,11 @@ pub async fn async_main(
         }
     });
 
-    info!("PoolForge service is active. Web UI available at http://localhost:8989");
+    info!("DriveSpanner service is active. Web UI available at http://localhost:8989");
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
-            info!("Received console Ctrl+C shutdown signal. Exiting PoolForge...");
+            info!("Received console Ctrl+C shutdown signal. Exiting DriveSpanner...");
         }
         _ = async {
             if let Some(ref mut rx) = shutdown_rx {
@@ -258,7 +258,7 @@ pub async fn async_main(
                 std::future::pending::<()>().await;
             }
         } => {
-            info!("Received Windows Service STOP signal. Exiting PoolForge...");
+            info!("Received Windows Service STOP signal. Exiting DriveSpanner...");
         }
         _ = api_task => {
             warn!("API server closed.");
@@ -272,22 +272,22 @@ pub async fn async_main(
 
 fn print_banner() {
     println!(r#"
-  _____             _ ______                     
- |  __ \           | |  ____|                    
- | |__) |__   ___  | | |__ ___  _ __ __ _  ___   
- |  ___/ _ \ / _ \ | |  __/ _ \| '__/ _` |/ _ \  
- | |  | (_) | (_) || | | | (_) | | | (_| |  __/  
- |_|   \___/ \___/ |_|_|  \___/|_|  \__, |\___|  
-                                     __/ |       
-                                    |___/        
-  High-Performance Storage Pool Daemon for Windows
-  Folder Duplication - Drive Balancing - Zero Striping
+  _____       _           _____                                 
+ |  __ \     (_)         / ____|                                
+ | |  | |_ __ ___   _____| (___  _ __   __ _ _ __  _ __   ___ _ __ 
+ | |  | | '__| \ \ / / _ \\___ \| '_ \ / _` | '_ \| '_ \ / _ \ '__|
+ | |__| | |  | |\ V /  __/____) | |_) | (_| | | | | | | |  __/ |   
+ |_____/|_|  |_| \_/ \___|_____/| .__/ \__,_|_| |_|_| |_|\___|_|   
+                                | |                                
+                                |_|                                
+   High-Performance Storage Pool Daemon for Windows
+   Folder Duplication - Drive Balancing - Zero Striping
 "#);
 }
 
 fn print_usage() {
     println!(r#"
-Usage: poolforge <COMMAND> [OPTIONS]
+Usage: drivespanner <COMMAND> [OPTIONS]
 
 Commands:
   run                   Run the storage daemon in the foreground (default)
@@ -295,8 +295,8 @@ Commands:
   add <DRIVE_PATH>      Add a physical drive or folder to the storage pool
   mount [LETTER]        Mount the virtual filesystem drive letter (default: V:)
   set-mount <LETTER>    Update the virtual filesystem mount letter in config
-  service install       Register PoolForge as an automatic Windows Service
-  service uninstall     Remove the PoolForge Windows Service
+  service install       Register DriveSpanner as an automatic Windows Service
+  service uninstall     Remove the DriveSpanner Windows Service
   service start         Start the Windows Service
   service stop          Stop the Windows Service
   uninstall             Stop the service and launch full application uninstallation

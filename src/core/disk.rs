@@ -266,7 +266,8 @@ fn scan_raw_system_volumes() -> Vec<RawVolumeData> {
             query_windows_volume_info(path);
 
         // Skip virtual pool filesystem to prevent recursion/looping
-        if filesystem.contains("PoolForge") || volume_name.contains("PoolForge") {
+        if filesystem.contains("DriveSpanner") || volume_name.contains("DriveSpanner")
+            || filesystem.contains("PoolForge") || volume_name.contains("PoolForge") {
             continue;
         }
 

@@ -44,9 +44,9 @@ impl log::Log for SimpleLogger {
 
 pub fn init_logger() {
     let mut log_file = None;
-    let log_dir = std::path::PathBuf::from("C:\\ProgramData\\PoolForge");
+    let log_dir = std::path::PathBuf::from("C:\\ProgramData\\DriveSpanner");
     let _ = fs::create_dir_all(&log_dir);
-    let log_path = log_dir.join("poolforge.log");
+    let log_path = log_dir.join("drivespanner.log");
     if let Ok(f) = OpenOptions::new().create(true).append(true).open(&log_path) {
         log_file = Some(f);
     }

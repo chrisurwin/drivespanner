@@ -1,4 +1,4 @@
-name: Build and Release PoolForge
+name: Build and Release DriveSpanner
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
               $ver = "0.1.0"
             }
           }
-          Write-Host "Building PoolForge Version: $ver"
+          Write-Host "Building DriveSpanner Version: $ver"
           Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$ver"
 
       - name: Build Release Binary
@@ -94,7 +94,7 @@ jobs:
       - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PoolForge-${{ env.VERSION }}-Setup
+          name: DriveSpanner-${{ env.VERSION }}-Setup
           path: target/installer/*.msi
           if-no-files-found: error
 
@@ -129,6 +129,6 @@ jobs:
             }
           } else {
             Write-Host "Creating new GitHub Release $tag..."
-            gh release create $tag $msiFiles --title "PoolForge $tag" --generate-notes --target $env:GITHUB_SHA
+            gh release create $tag $msiFiles --title "DriveSpanner $tag" --generate-notes --target $env:GITHUB_SHA
           }
 

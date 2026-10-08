@@ -1,6 +1,6 @@
 {
   "pool_id": "default-pool",
-  "pool_name": "PoolForge Storage",
+  "pool_name": "DriveSpanner Storage",
   "mount_point": "V:",
   "member_drives": [],
   "replication": {
@@ -24,7 +24,7 @@
   },
   "updates": {
     "check_enabled": true,
-    "github_repo": "chrisurwin/poolforge",
+    "github_repo": "chrisurwin/drivespanner",
     "check_interval_hours": 24
   }
 }

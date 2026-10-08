@@ -56,7 +56,7 @@ impl StoragePool {
         let disks = Arc::new(SyncRwLock::new(Vec::new()));
         let (replicator, rep_handle) = ReplicatorService::new(disks.clone(), config.clone());
         let balancer = Arc::new(DriveBalancer::new());
-        let updater = Arc::new(crate::core::updater::UpdateChecker::new("chris/poolforge".to_string()));
+        let updater = Arc::new(crate::core::updater::UpdateChecker::new("chrisurwin/drivespanner".to_string()));
 
         let pool = Self {
             config,

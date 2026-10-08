@@ -1,4 +1,4 @@
-// PoolForge - Web Dashboard Controller
+// DriveSpanner - Web Dashboard Controller
 
 let selectedDriveToAdd = null;
 let currentExplorerPath = '/';
@@ -243,7 +243,7 @@ async function fetchUpdates() {
 function openUpdateModal() {
     if (!latestUpdateData) return;
     const modal = document.getElementById('modal-update');
-    document.getElementById('update-modal-ver-text').textContent = `PoolForge v${latestUpdateData.latest_version} is available for installation`;
+    document.getElementById('update-modal-ver-text').textContent = `DriveSpanner v${latestUpdateData.latest_version} is available for installation`;
     document.getElementById('update-installed-ver').textContent = `v${latestUpdateData.current_version}`;
     document.getElementById('update-latest-ver').textContent = `v${latestUpdateData.latest_version}`;
     document.getElementById('update-release-notes').textContent = latestUpdateData.release_notes || 'No release notes provided.';

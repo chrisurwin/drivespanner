@@ -1,4 +1,4 @@
-// PoolForge WiX Installer - Drive Letter Validator and Configurator
+// DriveSpanner WiX Installer - Drive Letter Validator and Configurator
 
 function InitDriveLetter() {
     try {
@@ -146,7 +146,7 @@ function InstallWinFsp() {
         ts.WriteLine("$ErrorActionPreference = 'Stop'");
         ts.WriteLine("try {");
         ts.WriteLine("    Write-Host '==================================================' -ForegroundColor Cyan");
-        ts.WriteLine("    Write-Host '   PoolForge Prerequisite: Installing WinFsp' -ForegroundColor Cyan");
+        ts.WriteLine("    Write-Host '   DriveSpanner Prerequisite: Installing WinFsp' -ForegroundColor Cyan");
         ts.WriteLine("    Write-Host '==================================================' -ForegroundColor Cyan");
         ts.WriteLine("    $url = 'https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi'");
         ts.WriteLine("    $dest = Join-Path $env:TEMP 'winfsp-installer.msi'");

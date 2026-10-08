@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
     <Product Id="*"
-             Name="PoolForge Storage Service"
+             Name="DriveSpanner Storage Service"
              Language="1033"
              Version="$(var.Version)"
-             Manufacturer="PoolForge Contributors"
-             UpgradeCode="8FA9C82A-C1A5-42E1-A88E-3BC3B22E42B1">
+             Manufacturer="DriveSpanner Contributors"
+             UpgradeCode="C8B72D45-6F01-4A59-B3C5-18A375E9D28B">
 
         <Package InstallerVersion="500"
                  Compressed="yes"
@@ -19,10 +19,10 @@
         <MediaTemplate EmbedCab="yes" />
 
         <!-- Application and Installer Icons & ARP Properties -->
-        <Icon Id="poolforge.ico" SourceFile="$(var.SourceDir)\poolforge.ico" />
-        <Property Id="ARPPRODUCTICON" Value="poolforge.ico" />
-        <Property Id="ARPHELPLINK" Value="https://github.com/chrisurwin/poolforge" />
-        <Property Id="ARPURLINFOABOUT" Value="https://github.com/chrisurwin/poolforge" />
+        <Icon Id="drivespanner.ico" SourceFile="$(var.SourceDir)\drivespanner.ico" />
+        <Property Id="ARPPRODUCTICON" Value="drivespanner.ico" />
+        <Property Id="ARPHELPLINK" Value="https://github.com/chrisurwin/drivespanner" />
+        <Property Id="ARPURLINFOABOUT" Value="https://github.com/chrisurwin/drivespanner" />
         <Property Id="ARPCOMMENTS" Value="High-Performance Windows Storage Pool Service with file replication and drive balancing" />
 
         <!-- Installer Branding Bitmaps and License Agreement -->
@@ -53,29 +53,28 @@
         <CustomAction Id="OpenWinFspUrlAction" BinaryKey="ValidateDriveScript" JScriptCall="OpenWinFspUrl" Execute="immediate" Return="check" />
         <CustomAction Id="CheckWinFspStatusAction" BinaryKey="ValidateDriveScript" JScriptCall="CheckWinFspStatus" Execute="immediate" Return="check" />
 
-
-        <!-- Directory Structure: Install to %ProgramFiles%\PoolForge -->
+        <!-- Directory Structure: Install to %ProgramFiles%\DriveSpanner -->
         <Directory Id="TARGETDIR" Name="SourceDir">
             <Directory Id="ProgramFiles64Folder">
-                <Directory Id="INSTALLFOLDER" Name="PoolForge" />
+                <Directory Id="INSTALLFOLDER" Name="DriveSpanner" />
             </Directory>
             <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="PoolForge" />
+                <Directory Id="ApplicationProgramsFolder" Name="DriveSpanner" />
             </Directory>
         </Directory>
 
         <!-- Files and Components -->
         <DirectoryRef Id="INSTALLFOLDER">
             <!-- Core Daemon Executable and Windows Service Registration -->
-            <Component Id="PoolForgeServiceComponent" Guid="E63B4F55-9B21-4A59-8664-9F8F87C9DAA2" Win64="yes">
-                <File Id="PoolForgeExe"
-                      Source="$(var.SourceDir)\poolforge.exe"
+            <Component Id="DriveSpannerServiceComponent" Guid="E63B4F55-9B21-4A59-8664-9F8F87C9DAA2" Win64="yes">
+                <File Id="DriveSpannerExe"
+                      Source="$(var.SourceDir)\drivespanner.exe"
                       KeyPath="yes" />
 
                 <!-- Install as Windows Service configured for automatic boot startup -->
-                <ServiceInstall Id="PoolForgeServiceInstaller"
-                                Name="PoolForgeService"
-                                DisplayName="PoolForge Storage Service"
+                <ServiceInstall Id="DriveSpannerServiceInstaller"
+                                Name="DriveSpannerService"
+                                DisplayName="DriveSpanner Storage Service"
                                 Description="Aggregates physical hard drives into an expandable storage pool with file replication and background balancing."
                                 Type="ownProcess"
                                 Start="auto"
@@ -83,8 +82,8 @@
                                 Arguments="service run" />
 
                 <!-- Service Lifecycle: Start on install, stop on update/uninstall, delete on uninstall/upgrade -->
-                <ServiceControl Id="PoolForgeServiceControl"
-                                Name="PoolForgeService"
+                <ServiceControl Id="DriveSpannerServiceControl"
+                                Name="DriveSpannerService"
                                 Start="install"
                                 Stop="both"
                                 Remove="both"
@@ -92,8 +91,8 @@
             </Component>
 
             <!-- Configuration File: Never overwritten on upgrades to protect disks and user settings -->
-            <Component Id="PoolForgeConfigComponent" Guid="6E0B195C-5D63-42AC-8263-5F114227CE73" Win64="yes" NeverOverwrite="yes" Permanent="yes">
-                <File Id="PoolForgeConfigFile"
+            <Component Id="DriveSpannerConfigComponent" Guid="6E0B195C-5D63-42AC-8263-5F114227CE73" Win64="yes" NeverOverwrite="yes" Permanent="yes">
+                <File Id="DriveSpannerConfigFile"
                       Source="$(var.SourceDir)\config.json"
                       KeyPath="yes" />
             </Component>
@@ -108,11 +107,11 @@
             <!-- Uninstall Shortcut in Program Files Directory -->
             <Component Id="ProgramFilesUninstallShortcut" Guid="7C3F8B2D-91E4-4C23-B245-A67E824F315D" Win64="yes">
                 <Shortcut Id="UninstallInProgramFiles"
-                          Name="Uninstall PoolForge"
-                          Description="Uninstalls PoolForge Storage Service from this computer"
+                          Name="Uninstall DriveSpanner"
+                          Description="Uninstalls DriveSpanner Storage Service from this computer"
                           Target="[System64Folder]msiexec.exe"
                           Arguments="/x [ProductCode]"
-                          Icon="poolforge.ico" />
+                          Icon="drivespanner.ico" />
                 <CreateFolder />
             </Component>
         </DirectoryRef>
@@ -121,33 +120,33 @@
         <DirectoryRef Id="ApplicationProgramsFolder">
             <Component Id="ApplicationShortcut" Guid="4D82390F-238B-4B79-BF4A-1EE28701B27A" Win64="yes">
                 <Shortcut Id="OpenWebDashboard"
-                          Name="PoolForge Web Dashboard"
-                          Description="Open PoolForge management interface at http://localhost:8989"
+                          Name="DriveSpanner Web Dashboard"
+                          Description="Open DriveSpanner management interface at http://localhost:8989"
                           Target="[SystemFolder]cmd.exe"
                           Arguments="/c start http://localhost:8989"
-                          Icon="poolforge.ico" />
+                          Icon="drivespanner.ico" />
                 <Shortcut Id="ApplicationCLI"
-                          Name="PoolForge CLI"
-                          Description="Open PoolForge CLI status"
-                          Target="[#PoolForgeExe]"
+                          Name="DriveSpanner CLI"
+                          Description="Open DriveSpanner CLI status"
+                          Target="[#DriveSpannerExe]"
                           Arguments="status"
                           WorkingDirectory="INSTALLFOLDER"
-                          Icon="poolforge.ico" />
+                          Icon="drivespanner.ico" />
                 <Shortcut Id="UninstallShortcut"
-                          Name="Uninstall PoolForge"
-                          Description="Uninstalls PoolForge Storage Service from this computer"
+                          Name="Uninstall DriveSpanner"
+                          Description="Uninstalls DriveSpanner Storage Service from this computer"
                           Target="[System64Folder]msiexec.exe"
                           Arguments="/x [ProductCode]"
-                          Icon="poolforge.ico" />
+                          Icon="drivespanner.ico" />
                 <RemoveFolder Id="CleanUpShortCut" Directory="ApplicationProgramsFolder" On="uninstall" />
-                <RegistryValue Root="HKLM" Key="Software\PoolForge" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+                <RegistryValue Root="HKLM" Key="Software\DriveSpanner" Name="installed" Type="integer" Value="1" KeyPath="yes" />
             </Component>
         </DirectoryRef>
 
         <!-- Feature Definitions -->
-        <Feature Id="MainApplication" Title="PoolForge Core Service" Level="1">
-            <ComponentRef Id="PoolForgeServiceComponent" />
-            <ComponentRef Id="PoolForgeConfigComponent" />
+        <Feature Id="MainApplication" Title="DriveSpanner Core Service" Level="1">
+            <ComponentRef Id="DriveSpannerServiceComponent" />
+            <ComponentRef Id="DriveSpannerConfigComponent" />
             <ComponentRef Id="WinFspPrereqScript" />
             <ComponentRef Id="ProgramFilesUninstallShortcut" />
             <ComponentRef Id="ApplicationShortcut" />
@@ -156,7 +155,7 @@
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
         <!-- Custom User Interface Flow with Drive Letter Selection and Validation -->
-        <UI Id="WixUI_PoolForge">
+        <UI Id="WixUI_DriveSpanner">
             <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
             <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
             <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
@@ -188,7 +187,7 @@
                 <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Virtual Pool Drive Letter" />
                 <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose the virtual drive letter for your aggregated storage pool." />
 
-                <Control Id="IntroText" Type="Text" X="20" Y="60" Width="330" Height="30" Text="PoolForge will mount your storage pool as a unified drive letter in Windows Explorer. Enter an available drive letter below:" />
+                <Control Id="IntroText" Type="Text" X="20" Y="60" Width="330" Height="30" Text="DriveSpanner will mount your storage pool as a unified drive letter in Windows Explorer. Enter an available drive letter below:" />
                 
                 <Control Id="DriveLetterLabel" Type="Text" X="20" Y="102" Width="90" Height="15" Text="&amp;Drive Letter:" />
                 <Control Id="DriveLetterEdit" Type="Edit" X="115" Y="100" Width="50" Height="18" Property="POOL_DRIVE_LETTER" Text="{10}" />
@@ -225,7 +224,7 @@
                 <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Filesystem driver required for virtual storage pool mounting." />
 
                 <Control Id="PrereqIcon" Type="Icon" X="20" Y="58" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="WixUI_Ico_Exclam" />
-                <Control Id="PrereqText" Type="Text" X="55" Y="58" Width="295" Height="45" Text="PoolForge requires the WinFsp (Windows File System Proxy) driver to mount your pooled storage into Windows Explorer. WinFsp was not detected on this system." />
+                <Control Id="PrereqText" Type="Text" X="55" Y="58" Width="295" Height="45" Text="DriveSpanner requires the WinFsp (Windows File System Proxy) driver to mount your pooled storage into Windows Explorer. WinFsp was not detected on this system." />
 
                 <Control Id="InstallBtn" Type="PushButton" X="55" Y="112" Width="185" Height="24" Default="yes" Text="&amp;Install WinFsp Automatically">
                     <Publish Event="DoAction" Value="InstallWinFspAction">1</Publish>
@@ -290,13 +289,13 @@
             <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg">1</Publish>
         </UI>
 
-        <UIRef Id="WixUI_PoolForge" />
+        <UIRef Id="WixUI_DriveSpanner" />
         <UIRef Id="WixUI_ErrorProgressText" />
 
-        <!-- Elevated deferred action to stop and delete any pre-existing PoolForgeService before InstallServices runs -->
+        <!-- Elevated deferred action to stop and delete any pre-existing services before InstallServices runs -->
         <CustomAction Id="CleanupExistingServiceAction"
                       Directory="TARGETDIR"
-                      ExeCommand="cmd.exe /c &quot;net.exe stop PoolForgeService &amp; sc.exe delete PoolForgeService&quot;"
+                      ExeCommand="cmd.exe /c &quot;net.exe stop PoolForgeService &amp; sc.exe delete PoolForgeService &amp; net.exe stop DriveSpannerService &amp; sc.exe delete DriveSpannerService&quot;"
                       Execute="deferred"
                       Impersonate="no"
                       Return="ignore" />
@@ -312,7 +311,6 @@
             <Custom Action="SetApplyConfigData" Before="ApplyConfigDriveLetterAction">NOT Installed</Custom>
             <Custom Action="ApplyConfigDriveLetterAction" After="InstallFiles">NOT Installed</Custom>
         </InstallExecuteSequence>
-
 
     </Product>
 </Wix>
