@@ -4,6 +4,36 @@ function InitDriveLetter() {
     try {
         var current = Session.Property("POOL_DRIVE_LETTER");
         var fso = new ActiveXObject("Scripting.FileSystemObject");
+        var shell = new ActiveXObject("WScript.Shell");
+
+        // First check if an existing installation of DriveSpanner already configured a mount letter
+        var existingLetter = "";
+        try {
+            var searchPaths = [
+                shell.ExpandEnvironmentStrings("%ProgramFiles%\\DriveSpanner\\config.json"),
+                shell.ExpandEnvironmentStrings("%ProgramFiles(x86)%\\DriveSpanner\\config.json")
+            ];
+            for (var p = 0; p < searchPaths.length; p++) {
+                if (fso.FileExists(searchPaths[p])) {
+                    var ts = fso.OpenTextFile(searchPaths[p], 1, false);
+                    var cfgContent = ts.ReadAll();
+                    ts.Close();
+                    var match = cfgContent.match(/"mount_point"\s*:\s*"([A-Za-z]:?)"/);
+                    if (match && match[1]) {
+                        existingLetter = match[1].toUpperCase();
+                        if (existingLetter.length === 1) existingLetter += ":";
+                        break;
+                    }
+                }
+            }
+        } catch (ex) {}
+
+        if (existingLetter && existingLetter !== "") {
+            Session.Property("POOL_DRIVE_LETTER") = existingLetter;
+            Session.Property("EXISTING_DRIVE_LETTER") = existingLetter;
+            Session.Property("DRIVE_VALID") = "1";
+            return 1;
+        }
 
         if (!current || current === "") {
             // Check if V: is available by default
@@ -63,6 +93,15 @@ function ValidateDriveLetter() {
         if (ch === 'C') {
             Session.Property("DRIVE_VALID") = "0";
             Session.Property("DRIVE_ERROR_MSG") = "Drive letter C: is reserved for the Windows operating system and cannot be used for the storage pool.";
+            return 1;
+        }
+
+        // If the drive letter matches the existing configured letter for DriveSpanner, it is valid!
+        var existing = Session.Property("EXISTING_DRIVE_LETTER");
+        if (existing && letter === existing) {
+            Session.Property("POOL_DRIVE_LETTER") = letter;
+            Session.Property("DRIVE_VALID") = "1";
+            Session.Property("DRIVE_ERROR_MSG") = "";
             return 1;
         }
 

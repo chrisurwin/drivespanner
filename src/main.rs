@@ -189,6 +189,17 @@ fn main() {
             let letter = args.get(2).cloned().unwrap_or_else(|| "V:".to_string());
             PoolMounter::run_worker(&letter);
         }
+        "unmount" => {
+            println!("Unmounting DriveSpanner storage pool...");
+            if let Err(e) = ServiceManager::stop() {
+                warn!("Service stop note: {}", e);
+            }
+            let my_pid = std::process::id();
+            let _ = std::process::Command::new("taskkill.exe")
+                .args(&["/F", "/FI", &format!("PID ne {}", my_pid), "/IM", "drivespanner.exe"])
+                .output();
+            println!("Storage pool unmounted.");
+        }
         "mount-worker" => {
             let letter = args.get(2).cloned().unwrap_or_else(|| "V:".to_string());
             PoolMounter::run_worker(&letter);
@@ -294,6 +305,7 @@ Commands:
   status                Display current pool health, drives, and duplication status
   add <DRIVE_PATH>      Add a physical drive or folder to the storage pool
   mount [LETTER]        Mount the virtual filesystem drive letter (default: V:)
+  unmount               Stop the service and unmount the virtual drive
   set-mount <LETTER>    Update the virtual filesystem mount letter in config
   service install       Register DriveSpanner as an automatic Windows Service
   service uninstall     Remove the DriveSpanner Windows Service

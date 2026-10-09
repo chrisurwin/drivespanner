@@ -81,12 +81,12 @@
                                 ErrorControl="normal"
                                 Arguments="service run" />
 
-                <!-- Service Lifecycle: Start on install, stop on update/uninstall, delete on uninstall/upgrade -->
+                <!-- Service Lifecycle: Start on install, stop on update/uninstall, delete on uninstall only -->
                 <ServiceControl Id="DriveSpannerServiceControl"
                                 Name="DriveSpannerService"
                                 Start="install"
                                 Stop="both"
-                                Remove="both"
+                                Remove="uninstall"
                                 Wait="yes" />
             </Component>
 
@@ -251,8 +251,9 @@
                 </Control>
             </Dialog>
 
-            <!-- WelcomeDlg navigation -->
-            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg">NOT Installed</Publish>
+            <!-- WelcomeDlg navigation: direct to VerifyReadyDlg on upgrade -->
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">WIX_UPGRADE_DETECTED</Publish>
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg">NOT Installed AND NOT WIX_UPGRADE_DETECTED</Publish>
             <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">Installed AND NOT PATCH</Publish>
             <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">Installed AND PATCH</Publish>
 
@@ -260,7 +261,6 @@
             <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg">1</Publish>
             <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="WinFspPrereqDlg" Order="2">NOT Installed AND NOT WINFSP_INSTALLED AND NOT WINFSP_INSTALLED_WOW64 AND NOT (SKIP_WINFSP_CHECK = "1")</Publish>
             <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="3">Installed OR WINFSP_INSTALLED OR WINFSP_INSTALLED_WOW64 OR (SKIP_WINFSP_CHECK = "1")</Publish>
-
 
             <!-- InstallDirDlg navigation: Strictly routes Next to PoolDriveLetterDlg -->
             <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WinFspPrereqDlg" Order="1">NOT Installed AND NOT WINFSP_INSTALLED AND NOT WINFSP_INSTALLED_WOW64 AND NOT (SKIP_WINFSP_CHECK = "1")</Publish>
@@ -276,10 +276,11 @@
             <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath" Order="1">1</Publish>
             <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="2"><![CDATA[NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID<>"1"]]></Publish>
 
-            <!-- VerifyReadyDlg navigation: Back strictly routes to PoolDriveLetterDlg for new installs -->
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PoolDriveLetterDlg" Order="1">NOT Installed</Publish>
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">Installed AND NOT PATCH</Publish>
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3">Installed AND PATCH</Publish>
+            <!-- VerifyReadyDlg navigation: Back routes to WelcomeDlg on upgrade, or PoolDriveLetterDlg for new installs -->
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="1">WIX_UPGRADE_DETECTED</Publish>
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PoolDriveLetterDlg" Order="2">NOT Installed AND NOT WIX_UPGRADE_DETECTED</Publish>
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3">Installed AND NOT PATCH</Publish>
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="4">Installed AND PATCH</Publish>
 
             <!-- Maintenance dialog navigation -->
             <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg">1</Publish>
@@ -292,10 +293,18 @@
         <UIRef Id="WixUI_DriveSpanner" />
         <UIRef Id="WixUI_ErrorProgressText" />
 
-        <!-- Elevated deferred action to stop and delete any pre-existing services before InstallServices runs -->
-        <CustomAction Id="CleanupExistingServiceAction"
+        <!-- Elevated deferred action to stop service, unmount virtual drive, and terminate lingering processes before upgrade or install -->
+        <CustomAction Id="StopAndUnmountServiceAction"
                       Directory="TARGETDIR"
-                      ExeCommand="cmd.exe /c &quot;net.exe stop PoolForgeService &amp; sc.exe delete PoolForgeService &amp; net.exe stop DriveSpannerService &amp; sc.exe delete DriveSpannerService&quot;"
+                      ExeCommand="cmd.exe /c &quot;net.exe stop DriveSpannerService &amp; net.exe stop PoolForgeService &amp; sc.exe delete PoolForgeService &amp; taskkill.exe /F /IM drivespanner.exe &amp; exit 0&quot;"
+                      Execute="deferred"
+                      Impersonate="no"
+                      Return="ignore" />
+
+        <!-- Elevated deferred action to ensure service is started after installation -->
+        <CustomAction Id="EnsureServiceStartedAction"
+                      Directory="TARGETDIR"
+                      ExeCommand="cmd.exe /c &quot;net.exe start DriveSpannerService &amp; exit 0&quot;"
                       Execute="deferred"
                       Impersonate="no"
                       Return="ignore" />
@@ -305,11 +314,17 @@
             <Custom Action="InitDriveLetterAction" Before="ExecuteAction">NOT Installed</Custom>
         </InstallUISequence>
 
-        <!-- Apply chosen drive letter to config.json before starting the Windows service -->
+        <!-- Install Execution Sequence: Stop, Unmount, Install, Start, Remount -->
         <InstallExecuteSequence>
-            <Custom Action="CleanupExistingServiceAction" Before="InstallServices">NOT Installed OR REINSTALL</Custom>
-            <Custom Action="SetApplyConfigData" Before="ApplyConfigDriveLetterAction">NOT Installed</Custom>
-            <Custom Action="ApplyConfigDriveLetterAction" After="InstallFiles">NOT Installed</Custom>
+            <!-- 1. Stop service and unmount drive before files are modified or removed -->
+            <Custom Action="StopAndUnmountServiceAction" After="InstallInitialize">NOT Installed OR WIX_UPGRADE_DETECTED OR REINSTALL</Custom>
+
+            <!-- 2. For fresh installs only, apply chosen drive letter to config.json -->
+            <Custom Action="SetApplyConfigData" Before="ApplyConfigDriveLetterAction">NOT Installed AND NOT WIX_UPGRADE_DETECTED</Custom>
+            <Custom Action="ApplyConfigDriveLetterAction" After="InstallFiles">NOT Installed AND NOT WIX_UPGRADE_DETECTED</Custom>
+
+            <!-- 3. Ensure service is started and pool is remounted after StartServices -->
+            <Custom Action="EnsureServiceStartedAction" After="StartServices">NOT Installed OR WIX_UPGRADE_DETECTED OR REINSTALL</Custom>
         </InstallExecuteSequence>
 
     </Product>
