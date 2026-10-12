@@ -86,8 +86,8 @@ async function submitSetupPassword() {
     const confirm = document.getElementById('input-setup-confirm').value;
     const errBox = document.getElementById('setup-error-msg');
 
-    if (!pwd || pwd.length < 4) {
-        errBox.textContent = 'Password must be at least 4 characters long.';
+    if (!pwd || pwd.length < 8) {
+        errBox.textContent = 'Password must be at least 8 characters long.';
         errBox.style.display = 'block';
         return;
     }
@@ -317,6 +317,10 @@ function setupTabNavigation() {
                 loadExplorerPath(currentExplorerPath);
             }
             if (tabId === 'service') pageTitle.textContent = 'Windows Service Control';
+            if (tabId === 'settings') {
+                pageTitle.textContent = 'SSD Cache & Settings';
+                fetchCacheStatus();
+            }
         });
     });
 }
@@ -716,6 +720,24 @@ function setupActions() {
             }
         });
     });
+
+    // SSD Cache & Plex Listeners
+    const btnSaveCache = document.getElementById('btn-save-cache-settings');
+    if (btnSaveCache) btnSaveCache.addEventListener('click', saveCacheSettings);
+
+    const btnSyncPlex = document.getElementById('btn-sync-plex-now');
+    if (btnSyncPlex) btnSyncPlex.addEventListener('click', triggerPlexSync);
+
+    const btnRunMover = document.getElementById('btn-run-mover');
+    if (btnRunMover) btnRunMover.addEventListener('click', triggerCacheMover);
+
+    const inputMoverThresh = document.getElementById('input-mover-threshold');
+    if (inputMoverThresh) {
+        inputMoverThresh.addEventListener('input', (e) => {
+            const lbl = document.getElementById('mover-threshold-label');
+            if (lbl) lbl.textContent = `${e.target.value}%`;
+        });
+    }
 }
 
 // Modals
@@ -806,5 +828,223 @@ async function deleteRule(ruleId) {
         fetchPoolData(true);
     } catch (e) {
         console.error(e);
+    }
+}
+
+// SSD Cache Tier & Plex Integration Controllers
+async function fetchCacheStatus() {
+    try {
+        const res = await apiFetch('/api/cache/status').then(r => r.json());
+        if (res && res.success) {
+            renderCacheStatus(res);
+        }
+    } catch (e) {
+        console.error('Failed to fetch cache and Plex status:', e);
+    }
+}
+
+function renderCacheStatus(data) {
+    if (!data) return;
+
+    // 1. Render SSD Cache Disk
+    const driveDisplay = document.getElementById('cache-drive-display');
+    const capDisplay = document.getElementById('cache-capacity-display');
+    const usedText = document.getElementById('cache-used-text');
+    const freeText = document.getElementById('cache-free-text');
+    const barFill = document.getElementById('bar-cache-fill');
+    const tierBadge = document.getElementById('cache-tier-badge');
+
+    if (data.cache_disk) {
+        const cd = data.cache_disk;
+        if (driveDisplay) driveDisplay.textContent = `${cd.drive_path} (${cd.volume_name || 'SSD Cache Drive'})`;
+        if (capDisplay) capDisplay.textContent = formatBytes(cd.total_bytes);
+        if (usedText) usedText.textContent = `Used: ${formatBytes(cd.used_bytes)} (${cd.used_percent.toFixed(1)}%)`;
+        if (freeText) freeText.textContent = `Free: ${formatBytes(cd.free_bytes)}`;
+        if (barFill) barFill.style.width = `${cd.used_percent}%`;
+        if (tierBadge) {
+            tierBadge.textContent = 'Active Tier (Online)';
+            tierBadge.style.color = 'var(--accent-green)';
+            tierBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+        }
+    } else {
+        if (driveDisplay) driveDisplay.textContent = 'No SSD Cache drive configured';
+        if (capDisplay) capDisplay.textContent = '0 GB';
+        if (usedText) usedText.textContent = 'Used: 0 GB';
+        if (freeText) freeText.textContent = 'Free: 0 GB';
+        if (barFill) barFill.style.width = '0%';
+        if (tierBadge) {
+            tierBadge.textContent = 'Unassigned';
+            tierBadge.style.color = 'var(--accent-amber)';
+            tierBadge.style.background = 'rgba(245, 158, 11, 0.15)';
+        }
+    }
+
+    // 2. Render Settings Form
+    if (data.config) {
+        const cfg = data.config;
+        const chkPlex = document.getElementById('chk-plex-enabled');
+        const chkPrecacheNext = document.getElementById('chk-plex-precache-next');
+        const inputUrl = document.getElementById('input-plex-url');
+        const inputQuota = document.getElementById('input-plex-quota');
+        const inputThresh = document.getElementById('input-mover-threshold');
+        const threshLbl = document.getElementById('mover-threshold-label');
+
+        if (chkPlex && !chkPlex.dataset.userEdited) chkPlex.checked = !!cfg.plex.enabled;
+        if (chkPrecacheNext && !chkPrecacheNext.dataset.userEdited) chkPrecacheNext.checked = !!cfg.plex.precache_next_episode;
+        if (inputUrl && !inputUrl.dataset.userEdited) inputUrl.value = cfg.plex.server_url || 'http://localhost:32400';
+        if (inputQuota && !inputQuota.dataset.userEdited) inputQuota.value = cfg.plex.max_cache_gb || 50;
+        if (inputThresh && !inputThresh.dataset.userEdited) inputThresh.value = cfg.move_threshold_percent || 80;
+        if (threshLbl) threshLbl.textContent = `${cfg.move_threshold_percent || 80}%`;
+    }
+
+    // 3. Render Plex Pre-caching Status & Items
+    if (data.plex_status) {
+        const ps = data.plex_status;
+        const statusDot = document.getElementById('plex-status-dot');
+        const statusText = document.getElementById('plex-status-text');
+        const lastSyncLbl = document.getElementById('plex-last-sync-label');
+
+        if (ps.connected) {
+            if (statusDot) statusDot.style.background = 'var(--accent-green)';
+            if (statusText) {
+                statusText.textContent = 'Connected & Active';
+                statusText.style.color = 'var(--accent-green)';
+            }
+        } else if (ps.error_message) {
+            if (statusDot) statusDot.style.background = 'var(--accent-amber)';
+            if (statusText) {
+                statusText.textContent = `Sync Error: ${ps.error_message}`;
+                statusText.style.color = 'var(--accent-amber)';
+            }
+        } else {
+            if (statusDot) statusDot.style.background = 'var(--text-muted)';
+            if (statusText) {
+                statusText.textContent = 'Awaiting Initial Sync';
+                statusText.style.color = 'var(--text-secondary)';
+            }
+        }
+
+        if (lastSyncLbl) lastSyncLbl.textContent = `Last sync: ${ps.last_sync_time || 'Never'}`;
+
+        const itemsBadge = document.getElementById('plex-items-count-badge');
+        if (itemsBadge) {
+            itemsBadge.textContent = `${ps.items.length} Items (${formatBytes(ps.total_cached_bytes)})`;
+        }
+
+        const tbody = document.getElementById('plex-cached-table-body');
+        if (tbody) {
+            if (!ps.items || ps.items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 24px; color: var(--text-muted);">No media items currently pre-cached on the SSD. Click 'Sync Plex Now' to query Continue Watching.</td></tr>`;
+            } else {
+                tbody.innerHTML = ps.items.map(item => `
+                    <tr>
+                        <td style="font-weight: 600; color: var(--text-primary);">${item.title}</td>
+                        <td><span class="badge" style="background: rgba(99, 102, 241, 0.12); color: var(--accent-indigo); padding: 2px 6px; border-radius: 4px; font-size: 11px;">${item.media_type}</span></td>
+                        <td style="color: var(--accent-blue);">${item.source}</td>
+                        <td>${formatBytes(item.size_bytes)}</td>
+                        <td style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary);">${item.rel_path}</td>
+                        <td><span class="badge" style="background: rgba(16, 185, 129, 0.12); color: var(--accent-green); padding: 2px 6px; border-radius: 4px; font-size: 11px;">Cached on SSD</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+    }
+}
+
+async function saveCacheSettings() {
+    const btn = document.getElementById('btn-save-cache-settings');
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+    }
+
+    try {
+        const enabled = document.getElementById('chk-plex-enabled').checked;
+        const precacheNext = document.getElementById('chk-plex-precache-next').checked;
+        const serverUrl = document.getElementById('input-plex-url').value.trim();
+        const token = document.getElementById('input-plex-token').value.trim();
+        const maxGb = parseFloat(document.getElementById('input-plex-quota').value) || 50;
+        const thresh = parseFloat(document.getElementById('input-mover-threshold').value) || 80;
+
+        const res = await apiFetch('/api/cache/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: true,
+                move_threshold_percent: thresh,
+                plex_enabled: enabled,
+                plex_precache_next_episode: precacheNext,
+                plex_server_url: serverUrl,
+                plex_token: token ? token : null,
+                plex_max_cache_gb: maxGb
+            })
+        }).then(r => r.json());
+
+        alert(res.message || 'Cache and Plex settings saved successfully.');
+        fetchCacheStatus();
+    } catch (e) {
+        console.error('Failed to save cache settings:', e);
+        alert(e.message || 'Failed to save cache settings');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
+    }
+}
+
+async function triggerPlexSync() {
+    const btn = document.getElementById('btn-sync-plex-now');
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Syncing with Plex...';
+    }
+
+    try {
+        const res = await apiFetch('/api/cache/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }).then(r => r.json());
+
+        alert(res.message || 'Plex Continue Watching synchronization complete.');
+        fetchCacheStatus();
+    } catch (e) {
+        console.error('Failed to sync with Plex:', e);
+        alert(e.message || 'Failed to sync with Plex');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
+    }
+}
+
+async function triggerCacheMover() {
+    const btn = document.getElementById('btn-run-mover');
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Moving files...';
+    }
+
+    try {
+        const res = await apiFetch('/api/cache/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }).then(r => r.json());
+
+        alert(res.message || 'SSD Cache Mover complete.');
+        fetchCacheStatus();
+        fetchPoolData(true);
+    } catch (e) {
+        console.error('Failed to run cache mover:', e);
+        alert(e.message || 'Failed to run cache mover');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
     }
 }

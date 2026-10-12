@@ -13,6 +13,8 @@ use windows_service::{
     service_dispatcher,
 };
 
+pub mod smb;
+
 pub const SERVICE_NAME: &str = "DriveSpannerService";
 pub const SERVICE_DISPLAY_NAME: &str = "DriveSpanner Storage Service";
 

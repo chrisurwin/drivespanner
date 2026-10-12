@@ -200,6 +200,67 @@ fn main() {
                 .output();
             println!("Storage pool unmounted.");
         }
+        "upgrade-prepare" => {
+            println!("Preparing DriveSpanner for seamless upgrade...");
+            let cfg = PoolConfig::load_or_default(&PoolConfig::get_config_path());
+            let mount_letter = cfg.mount_point.trim_end_matches('\\').to_uppercase();
+
+            // 1. Discover active SMB shares mapped to this mount point
+            let shares = crate::service::smb::discover_shares_for_mount(&mount_letter);
+            if !shares.is_empty() {
+                println!("Discovered {} SMB share(s) mapped to {}:", shares.len(), mount_letter);
+                for s in &shares {
+                    println!("  - Share: {} -> {}", s.name, s.path);
+                }
+                if let Err(e) = crate::service::smb::save_upgrade_shares(&shares) {
+                    eprintln!("Warning saving shares: {}", e);
+                }
+                // 2. Put LanmanServer into paused wait-state so open connections don't drop
+                println!("Holding network connections in wait state (pausing LanmanServer)...");
+                let _ = crate::service::smb::pause_lanman_server();
+            } else {
+                println!("No active SMB shares found on {}.", mount_letter);
+            }
+
+            // 3. Gracefully stop service and unmount pool
+            println!("Stopping DriveSpannerService and unmounting virtual drive...");
+            let _ = ServiceManager::stop();
+            let my_pid = std::process::id();
+            let _ = std::process::Command::new("taskkill.exe")
+                .args(&["/F", "/FI", &format!("PID ne {}", my_pid), "/IM", "drivespanner.exe"])
+                .output();
+            println!("Storage pool unmounted. Upgrade preparation complete.");
+        }
+        "upgrade-resume" => {
+            println!("Resuming DriveSpanner after upgrade...");
+            // 1. Start the service
+            if let Err(e) = ServiceManager::start() {
+                warn!("Service start notice: {}", e);
+            }
+
+            // 2. Wait for the mount point to become available
+            let cfg = PoolConfig::load_or_default(&PoolConfig::get_config_path());
+            let mount_letter = cfg.mount_point.trim_end_matches('\\').to_uppercase();
+            let mount_root = format!("{}\\", mount_letter);
+            println!("Waiting for virtual drive {} to become ready...", mount_root);
+            for _ in 0..30 {
+                if std::path::Path::new(&mount_root).exists() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+
+            // 3. Restore any dropped SMB shares
+            let restored = crate::service::smb::restore_upgrade_shares();
+            if restored > 0 {
+                println!("Restored/verified {} SMB network share(s).", restored);
+            }
+
+            // 4. Resume LanmanServer so waiting connections resume transparently
+            println!("Releasing network connections from wait state (resuming LanmanServer)...");
+            let _ = crate::service::smb::resume_lanman_server();
+            println!("DriveSpanner upgrade completed successfully. Network connections resumed.");
+        }
         "mount-worker" => {
             let letter = args.get(2).cloned().unwrap_or_else(|| "V:".to_string());
             PoolMounter::run_worker(&letter);
@@ -235,6 +296,9 @@ pub async fn async_main(
     let pool_arc = Arc::new(pool);
 
     pool_arc.initialize_from_config().await?;
+
+    // Start Plex Continue Watching acceleration background sync loop
+    pool_arc.plex.clone().start_background_loop(pool_arc.clone());
 
     // Attempt WinFsp mount if mount point is configured
     let mount_pool_clone = pool_arc.clone();
@@ -306,6 +370,8 @@ Commands:
   add <DRIVE_PATH>      Add a physical drive or folder to the storage pool
   mount [LETTER]        Mount the virtual filesystem drive letter (default: V:)
   unmount               Stop the service and unmount the virtual drive
+  upgrade-prepare       Hold network connections & pause SMB before upgrade
+  upgrade-resume        Remount pool, restore shares & resume network connections
   set-mount <LETTER>    Update the virtual filesystem mount letter in config
   service install       Register DriveSpanner as an automatic Windows Service
   service uninstall     Remove the DriveSpanner Windows Service

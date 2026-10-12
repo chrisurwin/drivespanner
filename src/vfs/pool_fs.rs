@@ -211,7 +211,18 @@ pub unsafe extern "C" fn fs_getattr(path_ptr: *const c_char, stbuf: *mut FuseSta
     });
 
     let found_dir = probe_results.iter().flatten().find(|r| r.is_dir);
-    let found_file = probe_results.iter().flatten().find(|r| !r.is_dir && r.meta.is_some());
+    // Prioritize SSD Cache drive so CachedNode::File uses SSD cache if the file is cached there
+    let found_file = probe_results
+        .iter()
+        .flatten()
+        .filter(|r| !r.is_dir && r.meta.is_some())
+        .max_by_key(|r| {
+            if let Some(disk) = disks.iter().find(|d| d.id == r.disk_id) {
+                if disk.is_landing_zone { 10 } else { 1 }
+            } else {
+                0
+            }
+        });
 
     if let Some(_dir_res) = found_dir {
         if let Ok(mut lock) = PATH_CACHE.lock() {
@@ -447,11 +458,24 @@ pub unsafe extern "C" fn fs_open(path_ptr: *const c_char, fi: *mut FuseFileInfo)
         })
     };
 
-    if let Some(ref target_id) = cached_disk_id {
-        if let Some(disk) = disks.iter().find(|d| &d.id == target_id) {
-            let phys = disk.to_physical_path(&rel_path);
+    // Spindown Protection & SSD Cache Acceleration:
+    // If file exists on SSD Cache (e.g. newly written or precached by Plex), open directly from SSD!
+    if target_file.is_none() {
+        if let Some(cache_disk) = disks.iter().find(|d| d.is_landing_zone) {
+            let phys = cache_disk.to_physical_path(&rel_path);
             if phys.is_file() {
                 target_file = Some((phys, is_write));
+            }
+        }
+    }
+
+    if target_file.is_none() {
+        if let Some(ref target_id) = cached_disk_id {
+            if let Some(disk) = disks.iter().find(|d| &d.id == target_id) {
+                let phys = disk.to_physical_path(&rel_path);
+                if phys.is_file() {
+                    target_file = Some((phys, is_write));
+                }
             }
         }
     }
@@ -526,7 +550,7 @@ pub unsafe extern "C" fn fs_create(
             &disks,
             &excluded,
             1024 * 1024,
-            PlacementPolicy::MostFreeSpace,
+            PlacementPolicy::LandingZoneFirst, // Direct new writes to SSD Cache first
         )
     });
 

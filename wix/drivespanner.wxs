@@ -30,6 +30,11 @@
         <WixVariable Id="WixUIDialogBmp" Value="$(var.SourceDir)\dialog.bmp" />
         <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\License.rtf" />
 
+        <!-- Suppress Restart Manager aggressive prompts and avoid system reboots during upgrades -->
+        <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+        <Property Id="MSIDISABLERESTARTMANAGER" Value="1" />
+        <Property Id="REBOOT" Value="ReallySuppress" />
+
         <!-- Drive Letter Selection Properties -->
         <Property Id="POOL_DRIVE_LETTER" Value="V:" />
         <Property Id="DRIVE_VALID" Value="1" />
@@ -104,6 +109,13 @@
                       KeyPath="yes" />
             </Component>
 
+            <!-- SMB Network Share Preservation & Connection Holding Helper Script -->
+            <Component Id="HoldSharesScriptComponent" Guid="B8934C7A-5D12-4E89-9A01-C34E78129F41" Win64="yes">
+                <File Id="HoldSharesScriptFile"
+                      Source="$(var.SourceDir)\hold_shares.ps1"
+                      KeyPath="yes" />
+            </Component>
+
             <!-- Uninstall Shortcut in Program Files Directory -->
             <Component Id="ProgramFilesUninstallShortcut" Guid="7C3F8B2D-91E4-4C23-B245-A67E824F315D" Win64="yes">
                 <Shortcut Id="UninstallInProgramFiles"
@@ -148,6 +160,7 @@
             <ComponentRef Id="DriveSpannerServiceComponent" />
             <ComponentRef Id="DriveSpannerConfigComponent" />
             <ComponentRef Id="WinFspPrereqScript" />
+            <ComponentRef Id="HoldSharesScriptComponent" />
             <ComponentRef Id="ProgramFilesUninstallShortcut" />
             <ComponentRef Id="ApplicationShortcut" />
         </Feature>
@@ -293,18 +306,18 @@
         <UIRef Id="WixUI_DriveSpanner" />
         <UIRef Id="WixUI_ErrorProgressText" />
 
-        <!-- Elevated deferred action to stop service, unmount virtual drive, and terminate lingering processes before upgrade or install -->
+        <!-- Elevated deferred action to stop service, hold SMB connections in wait state, and unmount virtual drive before upgrade -->
         <CustomAction Id="StopAndUnmountServiceAction"
                       Directory="TARGETDIR"
-                      ExeCommand="cmd.exe /c &quot;net.exe stop DriveSpannerService &amp; net.exe stop PoolForgeService &amp; sc.exe delete PoolForgeService &amp; taskkill.exe /F /IM drivespanner.exe &amp; exit 0&quot;"
+                      ExeCommand="cmd.exe /c &quot;powershell.exe -ExecutionPolicy Bypass -NoProfile -Command &quot;&amp; { if (Test-Path '[INSTALLFOLDER]hold_shares.ps1') { &amp; '[INSTALLFOLDER]hold_shares.ps1' prepare } elseif (Test-Path '[ProgramFiles64Folder]DriveSpanner\hold_shares.ps1') { &amp; '[ProgramFiles64Folder]DriveSpanner\hold_shares.ps1' prepare } else { net.exe stop DriveSpannerService; net.exe stop PoolForgeService; sc.exe delete PoolForgeService; taskkill.exe /F /IM drivespanner.exe; } }&quot; &amp; exit 0&quot;"
                       Execute="deferred"
                       Impersonate="no"
                       Return="ignore" />
 
-        <!-- Elevated deferred action to ensure service is started after installation -->
+        <!-- Elevated deferred action to start service, remount virtual pool, restore SMB shares, and release held connections -->
         <CustomAction Id="EnsureServiceStartedAction"
                       Directory="TARGETDIR"
-                      ExeCommand="cmd.exe /c &quot;net.exe start DriveSpannerService &amp; exit 0&quot;"
+                      ExeCommand="cmd.exe /c &quot;powershell.exe -ExecutionPolicy Bypass -NoProfile -Command &quot;&amp; { if (Test-Path '[INSTALLFOLDER]hold_shares.ps1') { &amp; '[INSTALLFOLDER]hold_shares.ps1' resume } else { net.exe start DriveSpannerService; } }&quot; &amp; exit 0&quot;"
                       Execute="deferred"
                       Impersonate="no"
                       Return="ignore" />

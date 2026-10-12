@@ -170,39 +170,129 @@ pub fn sha256_hex(input: &[u8]) -> String {
     hex
 }
 
-static TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-/// Hashes password with salt using SHA-256: returns "salt$hash"
-pub fn hash_password(password: &str, salt: Option<&str>) -> String {
-    let active_salt = salt.map(|s| s.to_string()).unwrap_or_else(|| {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let counter = TOKEN_COUNTER.fetch_add(1, Ordering::Relaxed);
-        sha256_hex(format!("salt-{}-{}", now, counter).as_bytes())[..16].to_string()
-    });
-
-    let combined = format!("{}:{}", active_salt, password);
-    let digest = sha256_hex(combined.as_bytes());
-    format!("{}${}", active_salt, digest)
-}
-
-/// Verifies a password against stored "salt$hash"
-pub fn verify_password(password: &str, stored_hash: &str) -> bool {
-    let parts: Vec<&str> = stored_hash.split('$').collect();
-    if parts.len() != 2 {
+/// Compares two byte slices in constant time to prevent timing side-channel attacks.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
         return false;
     }
-    let salt = parts[0];
-    let expected = parts[1];
-    let computed = hash_password(password, Some(salt));
-    let computed_parts: Vec<&str> = computed.split('$').collect();
-    computed_parts.len() == 2 && computed_parts[1] == expected
+    let mut diff = 0u8;
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
-/// Generates a cryptographic session token
+/// Compares two strings in constant time to prevent timing side-channel attacks.
+pub fn constant_time_eq_str(a: &str, b: &str) -> bool {
+    constant_time_eq(a.as_bytes(), b.as_bytes())
+}
+
+/// Computes HMAC-SHA256 (RFC 2104 / FIPS 198-1 compliant)
+pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    let mut k = [0u8; 64];
+    if key.len() > 64 {
+        let mut hasher = Sha256::new();
+        hasher.update(key);
+        let key_hash = hasher.finalize();
+        k[..32].copy_from_slice(&key_hash);
+    } else {
+        k[..key.len()].copy_from_slice(key);
+    }
+
+    let mut ipad = [0u8; 64];
+    let mut opad = [0u8; 64];
+    for i in 0..64 {
+        ipad[i] = k[i] ^ 0x36;
+        opad[i] = k[i] ^ 0x5c;
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(&ipad);
+    inner.update(message);
+    let inner_hash = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(&opad);
+    outer.update(&inner_hash);
+    outer.finalize()
+}
+
+/// Derives a 32-byte key using PBKDF2-HMAC-SHA256 (RFC 2898 / RFC 8018)
+pub fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32) -> [u8; 32] {
+    let mut salt_with_index = Vec::with_capacity(salt.len() + 4);
+    salt_with_index.extend_from_slice(salt);
+    salt_with_index.extend_from_slice(&1u32.to_be_bytes());
+
+    let mut u = hmac_sha256(password, &salt_with_index);
+    let mut result = u;
+
+    for _ in 1..iterations {
+        u = hmac_sha256(password, &u);
+        for i in 0..32 {
+            result[i] ^= u[i];
+        }
+    }
+
+    result
+}
+
+static TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Generates a cryptographically random 32-character hex salt using OS entropy
+pub fn generate_secure_salt() -> String {
+    let u1 = uuid::Uuid::new_v4();
+    let u2 = uuid::Uuid::new_v4();
+    sha256_hex(format!("{}:{}", u1, u2).as_bytes())[..32].to_string()
+}
+
+pub const PBKDF2_DEFAULT_ITERATIONS: u32 = 20_000;
+
+/// Hashes password with PBKDF2-HMAC-SHA256: returns "pbkdf2$iterations$salt$hash"
+pub fn hash_password(password: &str, salt: Option<&str>) -> String {
+    let active_salt = salt.map(|s| s.to_string()).unwrap_or_else(generate_secure_salt);
+    let derived = pbkdf2_hmac_sha256(password.as_bytes(), active_salt.as_bytes(), PBKDF2_DEFAULT_ITERATIONS);
+
+    let mut hex = String::with_capacity(64);
+    for byte in derived {
+        use std::fmt::Write;
+        let _ = write!(hex, "{:02x}", byte);
+    }
+    format!("pbkdf2${}${}${}", PBKDF2_DEFAULT_ITERATIONS, active_salt, hex)
+}
+
+/// Verifies a password against stored hash using constant-time comparison.
+/// Supports modern "pbkdf2$iterations$salt$hash" and backwards-compatible "salt$hash".
+pub fn verify_password(password: &str, stored_hash: &str) -> bool {
+    let parts: Vec<&str> = stored_hash.split('$').collect();
+    if parts.len() == 4 && parts[0] == "pbkdf2" {
+        let iterations: u32 = parts[1].parse().unwrap_or(PBKDF2_DEFAULT_ITERATIONS);
+        let salt = parts[2];
+        let expected_hex = parts[3];
+        let derived = pbkdf2_hmac_sha256(password.as_bytes(), salt.as_bytes(), iterations);
+        let mut derived_hex = String::with_capacity(64);
+        for byte in derived {
+            use std::fmt::Write;
+            let _ = write!(derived_hex, "{:02x}", byte);
+        }
+        constant_time_eq_str(&derived_hex, expected_hex)
+    } else if parts.len() == 2 {
+        // Backwards compatibility with legacy "salt$hash"
+        let salt = parts[0];
+        let expected = parts[1];
+        let combined = format!("{}:{}", salt, password);
+        let digest = sha256_hex(combined.as_bytes());
+        constant_time_eq_str(&digest, expected)
+    } else {
+        false
+    }
+}
+
+/// Generates a cryptographically secure session token using OS entropy and monotonic counter
 pub fn generate_session_token(secret: &str) -> String {
+    let u = uuid::Uuid::new_v4();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let counter = TOKEN_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let raw = format!("session-{}-{}-{}", secret, now, counter);
+    let raw = format!("session-{}-{}-{}-{}", secret, u, now, counter);
     sha256_hex(raw.as_bytes())
 }
 
@@ -212,22 +302,18 @@ mod tests {
 
     #[test]
     fn test_sha256_nist_vectors() {
-        // Test empty string
         assert_eq!(
             sha256_hex(b""),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
-        // Test "abc"
         assert_eq!(
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
-        // Test 56-byte message (exact index = 56 boundary that previously crashed)
         assert_eq!(
             sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
         );
-        // Test varying lengths around block boundaries: 55, 56, 57, 63, 64, 65, 127, 128
         for len in [0, 1, 55, 56, 57, 63, 64, 65, 127, 128, 256] {
             let data = vec![b'a'; len];
             let hash = sha256_hex(&data);
@@ -236,18 +322,79 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_and_verify_password() {
+    fn test_hmac_sha256_rfc4231() {
+        // RFC 4231 Test Case 2: key="Jefe", data="what do ya want for nothing?"
+        let key = b"Jefe";
+        let data = b"what do ya want for nothing?";
+        let hmac = hmac_sha256(key, data);
+        let mut hex = String::new();
+        for b in hmac {
+            use std::fmt::Write;
+            let _ = write!(hex, "{:02x}", b);
+        }
+        assert_eq!(hex, "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+    }
+
+    #[test]
+    fn test_pbkdf2_sha256_standard_vectors() {
+        // Standard PBKDF2-HMAC-SHA256: P="password", S="salt", c=1, dkLen=32
+        let p = b"password";
+        let s = b"salt";
+        let dk1 = pbkdf2_hmac_sha256(p, s, 1);
+        let mut hex1 = String::new();
+        for b in dk1 {
+            use std::fmt::Write;
+            let _ = write!(hex1, "{:02x}", b);
+        }
+        assert_eq!(hex1, "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
+
+        // Standard PBKDF2-HMAC-SHA256: P="password", S="salt", c=2, dkLen=32
+        let dk2 = pbkdf2_hmac_sha256(p, s, 2);
+        let mut hex2 = String::new();
+        for b in dk2 {
+            use std::fmt::Write;
+            let _ = write!(hex2, "{:02x}", b);
+        }
+        assert_eq!(hex2, "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43");
+    }
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq(b"hello", b"hello"));
+        assert!(!constant_time_eq(b"hello", b"hellp"));
+        assert!(!constant_time_eq(b"hello", b"hell"));
+        assert!(constant_time_eq_str("secret-token-12345", "secret-token-12345"));
+        assert!(!constant_time_eq_str("secret-token-12345", "secret-token-12346"));
+    }
+
+    #[test]
+    fn test_hash_and_verify_password_pbkdf2() {
         let pwd = "SuperSecretPassword123!";
         let hash = hash_password(pwd, None);
-        assert!(!hash.is_empty());
+        assert!(hash.starts_with("pbkdf2$20000$"));
         assert!(verify_password(pwd, &hash));
         assert!(!verify_password("WrongPassword", &hash));
     }
 
     #[test]
+    fn test_verify_password_legacy_hash_compatibility() {
+        // Test backwards compatibility with legacy "salt$hash"
+        let pwd = "OldLegacyPassword!";
+        let salt = "mysalt1234567890";
+        let combined = format!("{}:{}", salt, pwd);
+        let legacy_hash = format!("{}${}", salt, sha256_hex(combined.as_bytes()));
+
+        assert!(verify_password(pwd, &legacy_hash));
+        assert!(!verify_password("IncorrectPassword", &legacy_hash));
+    }
+
+    #[test]
     fn test_generate_session_token() {
-        let token = generate_session_token("my-secret");
-        assert_eq!(token.len(), 64);
+        let token1 = generate_session_token("my-secret");
+        let token2 = generate_session_token("my-secret");
+        assert_eq!(token1.len(), 64);
+        assert_eq!(token2.len(), 64);
+        assert_ne!(token1, token2); // Different tokens due to UUID/counter
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "drivespanner"
-version = "0.1.2"
+version = "1.3.0"
 edition = "2021"
 authors = ["DriveSpanner Contributors"]
 description = "High-performance Windows Storage Pool service with folder replication and drive balancing"

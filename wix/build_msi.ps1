@@ -1,6 +1,6 @@
 # DriveSpanner WiX MSI Build Automation Script
 param (
-    [string]$Version = "0.1.2",
+    [string]$Version = "1.3.0",
     [string]$SourceDir = "",
     [string]$OutputDir = "target\installer"
 )
@@ -43,6 +43,7 @@ New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
 Copy-Item (Join-Path $SourceDir "drivespanner.exe") (Join-Path $stagingDir "drivespanner.exe") -Force
 Copy-Item (Join-Path $scriptDir "default_config.json") (Join-Path $stagingDir "config.json") -Force
 Copy-Item (Join-Path $scriptDir "check_winfsp.ps1") (Join-Path $stagingDir "check_winfsp.ps1") -Force
+Copy-Item (Join-Path $scriptDir "hold_shares.ps1") (Join-Path $stagingDir "hold_shares.ps1") -Force
 Copy-Item (Join-Path $scriptDir "validate_drive.js") (Join-Path $stagingDir "validate_drive.js") -Force
 Copy-Item (Join-Path $scriptDir "drivespanner.ico") (Join-Path $stagingDir "drivespanner.ico") -Force
 Copy-Item (Join-Path $scriptDir "banner.bmp") (Join-Path $stagingDir "banner.bmp") -Force

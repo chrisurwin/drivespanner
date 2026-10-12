@@ -6,17 +6,115 @@ use crate::vfs::PoolMounter;
 use axum::{
     extract::{Path as AxumPath, Query, State},
     http::{header, HeaderMap, StatusCode},
-    response::{Html, IntoResponse, Json},
+    response::{Html, IntoResponse, Json, Response},
     routing::{delete, get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+
+/// Thread-safe in-memory rate limiter for sensitive authentication endpoints
+#[derive(Debug)]
+pub struct RateLimiter {
+    attempts: Mutex<HashMap<String, (usize, Instant)>>,
+    max_attempts: usize,
+    window_duration: Duration,
+}
+
+impl RateLimiter {
+    pub fn new(max_attempts: usize, window_secs: u64) -> Self {
+        Self {
+            attempts: Mutex::new(HashMap::new()),
+            max_attempts,
+            window_duration: Duration::from_secs(window_secs),
+        }
+    }
+
+    /// Checks if a client is allowed to make an attempt.
+    /// Returns `Ok(())` if allowed, or `Err(remaining_secs)` if throttled.
+    pub fn check(&self, key: &str) -> Result<(), u64> {
+        let mut map = self.attempts.lock().unwrap();
+        let now = Instant::now();
+
+        // Evict expired entries if table grows large
+        if map.len() > 1000 {
+            let win = self.window_duration;
+            map.retain(|_, (_, start)| now.duration_since(*start) < win);
+        }
+
+        if let Some((count, start)) = map.get(key) {
+            let elapsed = now.duration_since(*start);
+            if elapsed < self.window_duration {
+                if *count >= self.max_attempts {
+                    let remaining = self.window_duration.saturating_sub(elapsed).as_secs().max(1);
+                    return Err(remaining);
+                }
+            } else {
+                map.remove(key);
+            }
+        }
+        Ok(())
+    }
+
+    /// Records an attempt (e.g. failed login or setup call)
+    pub fn record_attempt(&self, key: &str) {
+        let mut map = self.attempts.lock().unwrap();
+        let now = Instant::now();
+
+        if let Some((count, start)) = map.get_mut(key) {
+            if now.duration_since(*start) < self.window_duration {
+                *count += 1;
+                return;
+            }
+        }
+        map.insert(key.to_string(), (1, now));
+    }
+
+    /// Resets the counter upon a successful authentication
+    pub fn reset(&self, key: &str) {
+        let mut map = self.attempts.lock().unwrap();
+        map.remove(key);
+    }
+}
+
+pub fn get_client_ip_key(headers: &HeaderMap) -> String {
+    if let Some(forwarded) = headers.get("x-forwarded-for") {
+        if let Ok(s) = forwarded.to_str() {
+            if let Some(first) = s.split(',').next() {
+                let trimmed = first.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+    if let Some(real_ip) = headers.get("x-real-ip") {
+        if let Ok(s) = real_ip.to_str() {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    "127.0.0.1".to_string()
+}
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: Arc<StoragePool>,
+    pub rate_limiter: Arc<RateLimiter>,
+}
+
+impl AppState {
+    pub fn new(pool: Arc<StoragePool>) -> Self {
+        Self {
+            pool,
+            rate_limiter: Arc::new(RateLimiter::new(5, 60)), // 5 attempts per 60 seconds
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,6 +156,17 @@ pub struct AuthLoginRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateCacheConfigRequest {
+    pub enabled: Option<bool>,
+    pub move_threshold_percent: Option<f64>,
+    pub plex_enabled: Option<bool>,
+    pub plex_precache_next_episode: Option<bool>,
+    pub plex_server_url: Option<String>,
+    pub plex_token: Option<String>,
+    pub plex_max_cache_gb: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub message: String,
@@ -81,6 +190,11 @@ pub fn create_router(app_state: AppState) -> Router {
         // Updates routes
         .route("/api/updates", get(get_updates))
         .route("/api/updates/check", post(check_updates))
+        // Cache & Plex routes
+        .route("/api/cache/status", get(get_cache_status))
+        .route("/api/cache/config", post(set_cache_config))
+        .route("/api/cache/sync", post(sync_cache))
+        .route("/api/cache/move", post(run_cache_mover_endpoint))
         // Protected API routes
         .route("/api/status", get(get_status))
         .route("/api/drives", get(get_drives))
@@ -118,10 +232,20 @@ fn is_authenticated(headers: &HeaderMap, cfg: &PoolConfig) -> bool {
         return false;
     }
 
+    // Check session token expiration (7-day TTL if creation timestamp is recorded)
+    if cfg.api.session_token_created_at > 0 {
+        if let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) {
+            const SEVEN_DAYS_SECS: u64 = 7 * 24 * 3600;
+            if now.as_secs().saturating_sub(cfg.api.session_token_created_at) > SEVEN_DAYS_SECS {
+                return false;
+            }
+        }
+    }
+
     if let Some(auth_val) = headers.get(header::AUTHORIZATION) {
         if let Ok(s) = auth_val.to_str() {
             if let Some(token) = s.strip_prefix("Bearer ") {
-                if token == cfg.api.session_token {
+                if crate::api::auth::constant_time_eq_str(token.trim(), &cfg.api.session_token) {
                     return true;
                 }
             }
@@ -133,7 +257,7 @@ fn is_authenticated(headers: &HeaderMap, cfg: &PoolConfig) -> bool {
             for part in s.split(';') {
                 let part = part.trim();
                 if let Some(token) = part.strip_prefix("session=") {
-                    if token == cfg.api.session_token {
+                    if crate::api::auth::constant_time_eq_str(token.trim(), &cfg.api.session_token) {
                         return true;
                     }
                 }
@@ -184,8 +308,21 @@ async fn get_auth_status(
 
 async fn auth_setup(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<AuthSetupRequest>,
-) -> impl IntoResponse {
+) -> Response {
+    let client_key = get_client_ip_key(&headers);
+    if let Err(retry_after) = state.rate_limiter.check(&client_key) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("Too many requests. Please wait {} seconds.", retry_after),
+                "retry_after_secs": retry_after
+            })),
+        ).into_response();
+    }
+
     let mut cfg = state.pool.config.write().await;
     if !cfg.api.password_hash.is_empty() {
         return (
@@ -194,27 +331,29 @@ async fn auth_setup(
                 "success": false,
                 "message": "Administrator password is already configured. Please log in."
             })),
-        );
+        ).into_response();
     }
 
     let pwd = payload.password.trim();
-    if pwd.len() < 4 {
+    if pwd.len() < 8 {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
                 "success": false,
-                "message": "Password must be at least 4 characters long."
+                "message": "Password must be at least 8 characters long."
             })),
-        );
+        ).into_response();
     }
 
     let hashed = crate::api::auth::hash_password(pwd, None);
     let secret = Uuid::new_v4().to_string();
     let token = crate::api::auth::generate_session_token(&secret);
+    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     cfg.api.password_hash = hashed;
     cfg.api.session_secret = secret;
     cfg.api.session_token = token.clone();
+    cfg.api.session_token_created_at = now_secs;
     let config_path = PoolConfig::get_config_path();
     if let Err(e) = cfg.save_to(&config_path) {
         log::error!("Failed to save administrator password to {}: {}", config_path.display(), e);
@@ -224,19 +363,32 @@ async fn auth_setup(
 
     (
         StatusCode::OK,
+        [(header::SET_COOKIE, format!("session={}; Path=/; HttpOnly; SameSite=Strict", token))],
         Json(serde_json::json!({
             "success": true,
             "message": "Admin password configured successfully.",
             "token": token
         })),
-    )
+    ).into_response()
 }
-
 
 async fn auth_login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<AuthLoginRequest>,
-) -> impl IntoResponse {
+) -> Response {
+    let client_key = get_client_ip_key(&headers);
+    if let Err(retry_after) = state.rate_limiter.check(&client_key) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("Too many failed login attempts. Please wait {} seconds before trying again.", retry_after),
+                "retry_after_secs": retry_after
+            })),
+        ).into_response();
+    }
+
     let mut cfg = state.pool.config.write().await;
     if !cfg.api.auth_enabled {
         return (
@@ -245,7 +397,7 @@ async fn auth_login(
                 "success": true,
                 "token": "no-auth-required"
             })),
-        );
+        ).into_response();
     }
 
     if cfg.api.password_hash.is_empty() {
@@ -255,41 +407,53 @@ async fn auth_login(
                 "success": false,
                 "message": "Initial setup required."
             })),
-        );
+        ).into_response();
     }
 
     if crate::api::auth::verify_password(&payload.password, &cfg.api.password_hash) {
+        state.rate_limiter.reset(&client_key);
+
         let token = crate::api::auth::generate_session_token(&cfg.api.session_secret);
+        let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         cfg.api.session_token = token.clone();
+        cfg.api.session_token_created_at = now_secs;
         let _ = cfg.save_to(PoolConfig::get_config_path());
 
         (
             StatusCode::OK,
+            [(header::SET_COOKIE, format!("session={}; Path=/; HttpOnly; SameSite=Strict", token))],
             Json(serde_json::json!({
                 "success": true,
                 "token": token
             })),
-        )
+        ).into_response()
     } else {
+        state.rate_limiter.record_attempt(&client_key);
+
         (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({
                 "success": false,
                 "message": "Invalid password."
             })),
-        )
+        ).into_response()
     }
 }
 
-async fn auth_logout(State(state): State<AppState>) -> impl IntoResponse {
+async fn auth_logout(State(state): State<AppState>) -> Response {
     let mut cfg = state.pool.config.write().await;
     cfg.api.session_token = String::new();
+    cfg.api.session_token_created_at = 0;
     let _ = cfg.save_to(PoolConfig::get_config_path());
 
-    Json(serde_json::json!({
-        "success": true,
-        "message": "Logged out successfully."
-    }))
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, "session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict".to_string())],
+        Json(serde_json::json!({
+            "success": true,
+            "message": "Logged out successfully."
+        })),
+    ).into_response()
 }
 
 // Updates Handlers
@@ -301,6 +465,127 @@ async fn get_updates(State(state): State<AppState>) -> impl IntoResponse {
 async fn check_updates(State(state): State<AppState>) -> impl IntoResponse {
     let status = state.pool.updater.check_for_updates().await;
     Json(status)
+}
+
+// Cache & Plex Handlers
+async fn get_cache_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let cfg = state.pool.config.read().await;
+    check_auth(&headers, &cfg)?;
+    let cache_cfg = cfg.cache.clone();
+    drop(cfg);
+
+    let plex_status = state.pool.plex.get_status().await;
+
+    let cache_disk_stats = {
+        let disks = state.pool.disks.read().unwrap();
+        disks.iter().find(|d| d.is_landing_zone).map(|d| d.query_stats())
+    };
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "cache_disk": cache_disk_stats,
+        "config": cache_cfg,
+        "plex_status": plex_status,
+    })))
+}
+
+async fn set_cache_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateCacheConfigRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let mut cfg = state.pool.config.write().await;
+    check_auth(&headers, &cfg)?;
+
+    if let Some(en) = payload.enabled {
+        cfg.cache.enabled = en;
+    }
+    if let Some(thresh) = payload.move_threshold_percent {
+        cfg.cache.move_threshold_percent = thresh.clamp(10.0, 99.0);
+    }
+    if let Some(pe) = payload.plex_enabled {
+        cfg.cache.plex.enabled = pe;
+    }
+    if let Some(pne) = payload.plex_precache_next_episode {
+        cfg.cache.plex.precache_next_episode = pne;
+    }
+    if let Some(url) = payload.plex_server_url {
+        cfg.cache.plex.server_url = url;
+    }
+    if let Some(tok) = payload.plex_token {
+        cfg.cache.plex.token = tok;
+    }
+    if let Some(quota) = payload.plex_max_cache_gb {
+        cfg.cache.plex.max_cache_gb = quota;
+    }
+
+    let config_path = PoolConfig::get_config_path();
+    if let Err(e) = cfg.save_to(&config_path) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("Failed to save cache configuration: {}", e)
+            })),
+        ));
+    }
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "Cache and Plex settings saved successfully.",
+        "config": cfg.cache.clone(),
+    })))
+}
+
+async fn sync_cache(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let cfg = state.pool.config.read().await;
+    check_auth(&headers, &cfg)?;
+    drop(cfg);
+
+    match state.pool.plex.sync_and_precache(state.pool.clone()).await {
+        Ok(sync_status) => Ok(Json(serde_json::json!({
+            "success": true,
+            "message": format!("Plex sync complete: {} item(s) cached ({:.2} GB).", sync_status.items.len(), sync_status.total_cached_bytes as f64 / 1_073_741_824.0),
+            "status": sync_status,
+        }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("Plex cache sync failed: {}", e)
+            })),
+        )),
+    }
+}
+
+async fn run_cache_mover_endpoint(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let cfg = state.pool.config.read().await;
+    check_auth(&headers, &cfg)?;
+    drop(cfg);
+
+    match crate::core::plex::PlexCacheService::run_cache_mover(state.pool.clone()).await {
+        Ok(count) => Ok(Json(serde_json::json!({
+            "success": true,
+            "message": format!("SSD Cache Mover complete: {} file(s) flushed to HDD storage array.", count),
+            "moved_count": count,
+        }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("Cache mover error: {}", e)
+            })),
+        )),
+    }
 }
 
 // Protected Pool Handlers
@@ -703,7 +988,7 @@ mod tests {
         let cfg = PoolConfig::default();
         let shared_cfg = Arc::new(tokio::sync::RwLock::new(cfg));
         let (pool, _) = StoragePool::new(shared_cfg);
-        let app = create_router(AppState { pool: Arc::new(pool) });
+        let app = create_router(AppState::new(Arc::new(pool)));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -731,6 +1016,179 @@ mod tests {
         println!("Received HTTP response:\n{}", resp_str);
         assert!(resp_str.contains("200 OK"));
         assert!(resp_str.contains("Admin password configured successfully."));
+    }
+
+    #[tokio::test]
+    async fn test_auth_setup_rejects_short_password() {
+        let cfg = PoolConfig::default();
+        let shared_cfg = Arc::new(tokio::sync::RwLock::new(cfg));
+        let (pool, _) = StoragePool::new(shared_cfg);
+        let app = create_router(AppState::new(Arc::new(pool)));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let body = r#"{"password":"short"}"#; // 5 chars, less than 8
+        let req = format!(
+            "POST /api/auth/setup HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            addr,
+            body.len(),
+            body
+        );
+        stream.write_all(req.as_bytes()).await.unwrap();
+        let mut resp = Vec::new();
+        stream.read_to_end(&mut resp).await.unwrap();
+        let resp_str = String::from_utf8_lossy(&resp);
+
+        assert!(resp_str.contains("400 Bad Request"));
+        assert!(resp_str.contains("Password must be at least 8 characters long."));
+    }
+
+    #[test]
+    fn test_rate_limiter_unit() {
+        let limiter = RateLimiter::new(3, 60);
+        let client = "192.168.1.50";
+
+        // First 3 checks succeed
+        assert!(limiter.check(client).is_ok());
+        limiter.record_attempt(client);
+        assert!(limiter.check(client).is_ok());
+        limiter.record_attempt(client);
+        assert!(limiter.check(client).is_ok());
+        limiter.record_attempt(client);
+
+        // 4th check is blocked
+        let err = limiter.check(client);
+        assert!(err.is_err());
+        assert!(err.unwrap_err() <= 60);
+
+        // Another client is unaffected
+        assert!(limiter.check("192.168.1.51").is_ok());
+
+        // Reset clears client throttling
+        limiter.reset(client);
+        assert!(limiter.check(client).is_ok());
+    }
+
+    #[test]
+    fn test_is_authenticated_scenarios() {
+        let mut cfg = PoolConfig::default();
+        let mut headers = HeaderMap::new();
+
+        // 1. Auth disabled -> always true
+        cfg.api.auth_enabled = false;
+        assert!(is_authenticated(&headers, &cfg));
+
+        // 2. Auth enabled, no password configured -> false
+        cfg.api.auth_enabled = true;
+        cfg.api.password_hash = String::new();
+        assert!(!is_authenticated(&headers, &cfg));
+
+        // 3. Auth enabled, password configured, session token set
+        cfg.api.password_hash = "pbkdf2$20000$salt$hash".to_string();
+        cfg.api.session_token = "valid-session-token-12345".to_string();
+        cfg.api.session_token_created_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        // No headers provided -> false
+        assert!(!is_authenticated(&headers, &cfg));
+
+        // Valid Bearer header -> true
+        headers.insert(header::AUTHORIZATION, "Bearer valid-session-token-12345".parse().unwrap());
+        assert!(is_authenticated(&headers, &cfg));
+
+        // Invalid Bearer header -> false
+        headers.insert(header::AUTHORIZATION, "Bearer wrong-token".parse().unwrap());
+        assert!(!is_authenticated(&headers, &cfg));
+        headers.remove(header::AUTHORIZATION);
+
+        // Valid Cookie header -> true
+        headers.insert(header::COOKIE, "other=abc; session=valid-session-token-12345; user=admin".parse().unwrap());
+        assert!(is_authenticated(&headers, &cfg));
+
+        // Invalid Cookie header -> false
+        headers.insert(header::COOKIE, "session=invalid-token".parse().unwrap());
+        assert!(!is_authenticated(&headers, &cfg));
+
+        // Expired token (> 7 days) -> false
+        headers.insert(header::AUTHORIZATION, "Bearer valid-session-token-12345".parse().unwrap());
+        cfg.api.session_token_created_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_sub(8 * 24 * 3600); // 8 days ago
+        assert!(!is_authenticated(&headers, &cfg));
+    }
+
+    #[tokio::test]
+    async fn test_auth_login_and_logout_flow() {
+        let orig_content = std::fs::read_to_string("config.json").ok();
+
+        let mut cfg = PoolConfig::default();
+        cfg.api.auth_enabled = true;
+        cfg.api.password_hash = crate::api::auth::hash_password("ValidPassword123!", None);
+        cfg.api.session_secret = "test-secret".to_string();
+
+        let shared_cfg = Arc::new(tokio::sync::RwLock::new(cfg));
+        let (pool, _) = StoragePool::new(shared_cfg);
+        let app = create_router(AppState::new(Arc::new(pool)));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        // 1. Five failed login attempts
+        for _ in 0..5 {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let body = r#"{"password":"WrongPassword!"}"#;
+            let req = format!(
+                "POST /api/auth/login HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                addr, body.len(), body
+            );
+            stream.write_all(req.as_bytes()).await.unwrap();
+            let mut resp = Vec::new();
+            stream.read_to_end(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp);
+            assert!(resp_str.contains("401 Unauthorized"));
+        }
+
+        // 2. 6th attempt is throttled by rate limiter with 429
+        {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let body = r#"{"password":"ValidPassword123!"}"#;
+            let req = format!(
+                "POST /api/auth/login HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                addr, body.len(), body
+            );
+            stream.write_all(req.as_bytes()).await.unwrap();
+            let mut resp = Vec::new();
+            stream.read_to_end(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp);
+            assert!(resp_str.contains("429 Too Many Requests"));
+            assert!(resp_str.contains("retry_after_secs"));
+        }
+
+        // 3. Test logout clears session cookie
+        {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let req = format!(
+                "POST /api/auth/logout HTTP/1.1\r\nHost: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                addr
+            );
+            stream.write_all(req.as_bytes()).await.unwrap();
+            let mut resp = Vec::new();
+            stream.read_to_end(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp);
+            assert!(resp_str.contains("200 OK"));
+            assert!(resp_str.contains("Max-Age=0"));
+        }
+
+        if let Some(c) = orig_content {
+            let _ = std::fs::write("config.json", c);
+        }
     }
 }
 

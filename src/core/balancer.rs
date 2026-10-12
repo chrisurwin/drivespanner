@@ -90,6 +90,7 @@ impl DriveBalancer {
     pub fn calculate_imbalance(disks: &[MemberDisk]) -> f64 {
         let active: Vec<_> = disks
             .iter()
+            .filter(|d| !d.is_landing_zone) // SSD Cache drives do not participate in array storage balancing
             .filter_map(|d| {
                 let s = d.query_stats();
                 if s.online && s.enabled && s.total_bytes > 0 {
@@ -145,9 +146,10 @@ impl DriveBalancer {
         );
         *balancer.state.write().await = BalancerState::Balancing;
 
-        // Group disks into most-used (sources) and least-used (destinations)
+        // Group persistent array disks into most-used (sources) and least-used (destinations)
         let mut disk_stats: Vec<_> = disks
             .iter()
+            .filter(|d| !d.is_landing_zone) // Exclude SSD cache drive from array balancing
             .map(|d| (d.clone(), d.query_stats()))
             .filter(|(_, s)| s.online && s.enabled && !s.read_only)
             .collect();

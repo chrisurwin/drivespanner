@@ -27,6 +27,10 @@ pub struct PoolOverviewStats {
     pub under_replicated_count: u64,
     pub pool_imbalance_percent: f64,
     pub status_badge: String, // "Healthy", "Degraded", "Balancing", "Replicating"
+    pub cache_total_bytes: u64,
+    pub cache_free_bytes: u64,
+    pub cache_used_bytes: u64,
+    pub cache_drive_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +52,7 @@ pub struct StoragePool {
     pub replicator: Arc<ReplicatorService>,
     pub balancer: Arc<DriveBalancer>,
     pub updater: Arc<crate::core::updater::UpdateChecker>,
+    pub plex: Arc<crate::core::plex::PlexCacheService>,
     pub is_mounted: Arc<RwLock<bool>>,
 }
 
@@ -57,6 +62,7 @@ impl StoragePool {
         let (replicator, rep_handle) = ReplicatorService::new(disks.clone(), config.clone());
         let balancer = Arc::new(DriveBalancer::new());
         let updater = Arc::new(crate::core::updater::UpdateChecker::new("chrisurwin/drivespanner".to_string()));
+        let plex = Arc::new(crate::core::plex::PlexCacheService::new());
 
         let pool = Self {
             config,
@@ -64,6 +70,7 @@ impl StoragePool {
             replicator: Arc::new(replicator),
             balancer,
             updater,
+            plex,
             is_mounted: Arc::new(RwLock::new(false)),
         };
 
@@ -117,22 +124,35 @@ impl StoragePool {
         let rep_status = self.replicator.get_status().await;
         let bal_status = self.balancer.get_status().await;
 
-        let (total_bytes, free_bytes, total_files, member_count, imbalance) = {
+        let (total_bytes, free_bytes, total_files, member_count, imbalance, cache_total_bytes, cache_free_bytes, cache_drive_count) = {
             let disks = self.disks.read().unwrap();
             let mut total: u64 = 0;
             let mut free: u64 = 0;
             let mut files: u64 = 0;
+            let mut normal_count: usize = 0;
+
+            let mut c_total: u64 = 0;
+            let mut c_free: u64 = 0;
+            let mut c_count: usize = 0;
 
             for disk in disks.iter() {
                 let stats = disk.query_stats();
                 if stats.online && stats.enabled {
-                    total = total.saturating_add(stats.total_bytes);
-                    free = free.saturating_add(stats.free_bytes);
-                    files += stats.file_count;
+                    if disk.is_landing_zone {
+                        // SSD Cache does not count toward normal storage array capacity
+                        c_total = c_total.saturating_add(stats.total_bytes);
+                        c_free = c_free.saturating_add(stats.free_bytes);
+                        c_count += 1;
+                    } else {
+                        total = total.saturating_add(stats.total_bytes);
+                        free = free.saturating_add(stats.free_bytes);
+                        files += stats.file_count;
+                        normal_count += 1;
+                    }
                 }
             }
             let imb = DriveBalancer::calculate_imbalance(&disks);
-            (total, free, files, disks.len(), imb)
+            (total, free, files, normal_count, imb, c_total, c_free, c_count)
         };
 
         let used_bytes = total_bytes.saturating_sub(free_bytes);
@@ -141,6 +161,7 @@ impl StoragePool {
         } else {
             0.0
         };
+        let cache_used_bytes = cache_total_bytes.saturating_sub(cache_free_bytes);
 
         let status_badge = if bal_status.state == crate::core::balancer::BalancerState::Balancing {
             "Balancing".to_string()
@@ -167,6 +188,10 @@ impl StoragePool {
             under_replicated_count: rep_status.under_replicated_count,
             pool_imbalance_percent: imbalance,
             status_badge,
+            cache_total_bytes,
+            cache_free_bytes,
+            cache_used_bytes,
+            cache_drive_count,
         }
     }
 

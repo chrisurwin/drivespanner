@@ -39,15 +39,19 @@ impl PlacementEngine {
             }
         }
 
-        match policy {
-            PlacementPolicy::MostFreeSpace | PlacementPolicy::LandingZoneFirst => {
-                eligible.into_iter().max_by_key(|d| d.query_stats().free_bytes)
-            }
+        // For long-term / MostFreeSpace storage, prefer normal array drives over the SSD cache
+        let array_disks: Vec<_> = eligible.iter().filter(|d| !d.is_landing_zone).copied().collect();
+        if !array_disks.is_empty() {
+            array_disks.into_iter().max_by_key(|d| d.query_stats().free_bytes)
+        } else {
+            eligible.into_iter().max_by_key(|d| d.query_stats().free_bytes)
         }
     }
 
     /// Selects `target_count` distinct member disks to host replicas of a file.
-    /// Invariant: Replicas of the same file are NEVER placed on the same physical drive!
+    /// Invariants:
+    /// 1. Replicas of the same file are NEVER placed on the same physical drive!
+    /// 2. Replicas are NEVER placed on an SSD Cache drive (landing zone) - only normal storage array disks!
     pub fn select_replica_disks<'a>(
         disks: &'a [MemberDisk],
         existing_disk_ids: &HashSet<String>,
@@ -56,6 +60,13 @@ impl PlacementEngine {
     ) -> Vec<&'a MemberDisk> {
         let mut selected = Vec::new();
         let mut excluded = existing_disk_ids.clone();
+
+        // Strictly exclude SSD cache drives (landing zone) from replica selection
+        for d in disks {
+            if d.is_landing_zone {
+                excluded.insert(d.id.clone());
+            }
+        }
 
         for _ in 0..needed_count {
             if let Some(disk) = Self::select_primary_disk(

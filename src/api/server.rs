@@ -16,7 +16,7 @@ impl ApiServer {
             (cfg.api.host.clone(), cfg.api.port)
         };
 
-        let state = AppState { pool };
+        let state = AppState::new(pool);
         let app = create_router(state);
 
         let addr: SocketAddr = format!("{}:{}", host, port)

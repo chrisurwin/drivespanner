@@ -16,6 +16,8 @@ pub struct PoolConfig {
     pub api: ApiConfig,
     #[serde(default)]
     pub updates: UpdateConfig,
+    #[serde(default)]
+    pub cache: CacheConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +77,8 @@ pub struct ApiConfig {
     pub session_secret: String,
     #[serde(default)]
     pub session_token: String,
+    #[serde(default)]
+    pub session_token_created_at: u64,
 }
 
 fn default_host() -> String {
@@ -114,6 +118,85 @@ impl Default for UpdateConfig {
             check_enabled: true,
             github_repo: default_github_repo(),
             check_interval_hours: default_check_interval(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_cache_move_threshold")]
+    pub move_threshold_percent: f64,
+    #[serde(default = "default_cache_schedule_hours")]
+    pub schedule_interval_hours: u64,
+    #[serde(default = "default_min_file_age_minutes")]
+    pub min_file_age_minutes: u64,
+    #[serde(default)]
+    pub plex: PlexCacheConfig,
+}
+
+fn default_cache_move_threshold() -> f64 {
+    80.0
+}
+
+fn default_cache_schedule_hours() -> u64 {
+    4
+}
+
+fn default_min_file_age_minutes() -> u64 {
+    15
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            move_threshold_percent: default_cache_move_threshold(),
+            schedule_interval_hours: default_cache_schedule_hours(),
+            min_file_age_minutes: default_min_file_age_minutes(),
+            plex: PlexCacheConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlexCacheConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub precache_next_episode: bool,
+    #[serde(default = "default_plex_url")]
+    pub server_url: String,
+    #[serde(default)]
+    pub token: String,
+    #[serde(default = "default_plex_sync_minutes")]
+    pub sync_interval_minutes: u64,
+    #[serde(default = "default_plex_max_cache_gb")]
+    pub max_cache_gb: u64,
+}
+
+fn default_plex_url() -> String {
+    "http://localhost:32400".to_string()
+}
+
+fn default_plex_sync_minutes() -> u64 {
+    15
+}
+
+fn default_plex_max_cache_gb() -> u64 {
+    100
+}
+
+impl Default for PlexCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            precache_next_episode: true,
+            server_url: default_plex_url(),
+            token: String::new(),
+            sync_interval_minutes: default_plex_sync_minutes(),
+            max_cache_gb: default_plex_max_cache_gb(),
         }
     }
 }
@@ -159,8 +242,10 @@ impl Default for PoolConfig {
                 password_hash: String::new(),
                 session_secret: Uuid::new_v4().to_string(),
                 session_token: String::new(),
+                session_token_created_at: 0,
             },
             updates: UpdateConfig::default(),
+            cache: CacheConfig::default(),
         }
     }
 }
