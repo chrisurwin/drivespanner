@@ -133,6 +133,14 @@ pub struct AddRuleRequest {
     pub path_pattern: String,
     pub replica_count: usize,
     pub description: Option<String>,
+    pub pin_to_cache: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PinFolderRequest {
+    pub path_pattern: String,
+    pub replica_count: Option<usize>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -161,6 +169,7 @@ pub struct UpdateCacheConfigRequest {
     pub move_threshold_percent: Option<f64>,
     pub plex_enabled: Option<bool>,
     pub plex_precache_next_episode: Option<bool>,
+    pub plex_evict_watched_episodes: Option<bool>,
     pub plex_server_url: Option<String>,
     pub plex_token: Option<String>,
     pub plex_max_cache_gb: Option<u64>,
@@ -195,6 +204,10 @@ pub fn create_router(app_state: AppState) -> Router {
         .route("/api/cache/config", post(set_cache_config))
         .route("/api/cache/sync", post(sync_cache))
         .route("/api/cache/move", post(run_cache_mover_endpoint))
+        .route("/api/cache/pinned", get(get_pinned_cache_folders))
+        .route("/api/cache/pinned", post(add_pinned_cache_folder))
+        .route("/api/cache/pinned/unpin/:id", post(unpin_cache_folder))
+        .route("/api/cache/pinned/sync", post(sync_pinned_cache_endpoint))
         // Protected API routes
         .route("/api/status", get(get_status))
         .route("/api/drives", get(get_drives))
@@ -484,11 +497,14 @@ async fn get_cache_status(
         disks.iter().find(|d| d.is_landing_zone).map(|d| d.query_stats())
     };
 
+    let pinned_folders = crate::core::plex::PlexCacheService::get_pinned_fast_cache_overview(&state.pool).await;
+
     Ok(Json(serde_json::json!({
         "success": true,
         "cache_disk": cache_disk_stats,
         "config": cache_cfg,
         "plex_status": plex_status,
+        "pinned_folders": pinned_folders,
     })))
 }
 
@@ -511,6 +527,9 @@ async fn set_cache_config(
     }
     if let Some(pne) = payload.plex_precache_next_episode {
         cfg.cache.plex.precache_next_episode = pne;
+    }
+    if let Some(ewe) = payload.plex_evict_watched_episodes {
+        cfg.cache.plex.evict_watched_episodes = ewe;
     }
     if let Some(url) = payload.plex_server_url {
         cfg.cache.plex.server_url = url;
@@ -583,6 +602,131 @@ async fn run_cache_mover_endpoint(
             Json(serde_json::json!({
                 "success": false,
                 "message": format!("Cache mover error: {}", e)
+            })),
+        )),
+    }
+}
+
+async fn get_pinned_cache_folders(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let cfg = state.pool.config.read().await;
+    check_auth(&headers, &cfg)?;
+    drop(cfg);
+
+    let pinned = crate::core::plex::PlexCacheService::get_pinned_fast_cache_overview(&state.pool).await;
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "pinned_folders": pinned,
+    })))
+}
+
+async fn add_pinned_cache_folder(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<PinFolderRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let mut cfg = state.pool.config.write().await;
+    check_auth(&headers, &cfg)?;
+
+    let default_replicas = cfg.replication.default_replicas.max(2);
+    let replica_count = payload.replica_count.unwrap_or(default_replicas).max(1);
+    let norm_path = crate::core::replication::ReplicationRulesEngine::normalize_path(&payload.path_pattern);
+
+    // If an existing rule exists for this path, ensure pin_to_cache is true
+    if let Some(existing) = cfg.replication.rules.iter_mut().find(|r| {
+        crate::core::replication::ReplicationRulesEngine::normalize_path(&r.path_pattern) == norm_path
+    }) {
+        existing.pin_to_cache = true;
+        if payload.replica_count.is_some() {
+            existing.replica_count = replica_count;
+        }
+        if let Some(desc) = payload.description {
+            existing.description = desc;
+        }
+    } else {
+        let id = Uuid::new_v4().to_string();
+        let desc = payload.description.unwrap_or_else(|| {
+            format!("Fast SSD Cache pinned & duplicated ({}x) for {}", replica_count, norm_path)
+        });
+        cfg.replication.rules.push(FolderReplicationRule {
+            id,
+            path_pattern: norm_path,
+            replica_count,
+            enabled: true,
+            description: desc,
+            pin_to_cache: true,
+        });
+    }
+
+    let _ = cfg.save_to(PoolConfig::get_config_path());
+    drop(cfg);
+
+    // Immediately trigger sync in the background so files are copied to SSD cache
+    let pool_clone = state.pool.clone();
+    tokio::spawn(async move {
+        let _ = crate::core::plex::PlexCacheService::sync_pinned_fast_cache(pool_clone).await;
+    });
+
+    Ok(Json(ApiResponse {
+        success: true,
+        message: "Folder pinned to Fast SSD Cache and queued for sync".to_string(),
+        data: None::<()>,
+    }))
+}
+
+async fn unpin_cache_folder(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(rule_id): AxumPath<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let mut cfg = state.pool.config.write().await;
+    check_auth(&headers, &cfg)?;
+
+    if let Some(rule) = cfg.replication.rules.iter_mut().find(|r| r.id == rule_id) {
+        rule.pin_to_cache = false;
+        let _ = cfg.save_to(PoolConfig::get_config_path());
+        Ok(Json(ApiResponse {
+            success: true,
+            message: "Folder unpinned from Fast SSD Cache. Existing files on SSD will be migrated to HDD on the next mover cycle.".to_string(),
+            data: None::<()>,
+        }))
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Rule not found"
+            })),
+        ))
+    }
+}
+
+async fn sync_pinned_cache_endpoint(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let cfg = state.pool.config.read().await;
+    check_auth(&headers, &cfg)?;
+    drop(cfg);
+
+    match crate::core::plex::PlexCacheService::sync_pinned_fast_cache(state.pool.clone()).await {
+        Ok(stats) => Ok(Json(serde_json::json!({
+            "success": true,
+            "message": format!(
+                "Fast SSD Cache sync complete: {} file(s) newly cached ({:.2} MB), {} file(s) already cached.",
+                stats.files_copied,
+                stats.bytes_copied as f64 / 1_048_576.0,
+                stats.files_already_cached
+            ),
+            "stats": stats,
+        }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("Fast SSD Cache sync failed: {}", e),
             })),
         )),
     }
@@ -697,14 +841,25 @@ async fn add_rule(
         format!("Replicate {} copies for {}", payload.replica_count, payload.path_pattern)
     });
 
+    let pin_to_cache = payload.pin_to_cache.unwrap_or(false);
+
     cfg.replication.rules.push(FolderReplicationRule {
         id,
         path_pattern: payload.path_pattern,
         replica_count: payload.replica_count,
         enabled: true,
         description: desc,
+        pin_to_cache,
     });
     let _ = cfg.save_to(PoolConfig::get_config_path());
+    drop(cfg);
+
+    if pin_to_cache {
+        let pool_clone = state.pool.clone();
+        tokio::spawn(async move {
+            let _ = crate::core::plex::PlexCacheService::sync_pinned_fast_cache(pool_clone).await;
+        });
+    }
 
     Ok(Json(ApiResponse {
         success: true,

@@ -50,7 +50,7 @@ impl ReplicationRulesEngine {
         p.to_lowercase()
     }
 
-    fn matches_pattern(path: &str, pattern: &str) -> bool {
+    pub fn matches_pattern(path: &str, pattern: &str) -> bool {
         if pattern == "/" {
             return true;
         }

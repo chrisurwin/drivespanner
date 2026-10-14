@@ -442,6 +442,9 @@
                                     <span class="info-key">Storage Architecture:</span>
                                     <span class="info-val">Single-file whole persistence</span>
                                 </div>
+                            </div>
+                        </div>
+
                         <div class="card">
                             <h3>Virtual Drive Letter Configuration</h3>
                             <p class="card-desc">Assign the Windows drive letter where the unified virtual pool is mounted in File Explorer.</p>
@@ -482,6 +485,32 @@
                                     <option value="Z:">Drive Z:</option>
                                 </select>
                                 <button class="btn btn-outline" id="btn-save-mount-letter">Apply Drive Letter</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Software Updates &amp; Releases</h3>
+                            <p class="card-desc">Online version checks against GitHub Releases for new installer packages and features.</p>
+                            <div class="info-list" style="margin-bottom: 16px;">
+                                <div class="info-row">
+                                    <span class="info-key">Installed Version:</span>
+                                    <span class="info-val highlight" id="service-installed-ver">v1.3.0</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-key">Latest Release:</span>
+                                    <span class="info-val" id="service-latest-ver">Checking...</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-key">GitHub Repository:</span>
+                                    <span class="info-val" style="font-family: var(--font-mono); font-size: 11px;">chrisurwin/drivespanner</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-key">Last Checked:</span>
+                                    <span class="info-val" id="service-last-checked-ver">Never</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-outline" id="btn-service-check-updates" onclick="checkUpdatesNow()">Check for Updates</button>
                             </div>
                         </div>
                     </div>
@@ -611,6 +640,16 @@
                                 </p>
                             </div>
 
+                            <div class="form-group checkbox-group" style="grid-column: 1 / -1; margin-bottom: 0;">
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                    <input type="checkbox" id="chk-plex-evict-watched" style="width: 18px; height: 18px; accent-color: var(--accent-indigo); cursor: pointer;">
+                                    <span style="font-weight: 600; font-size: 14px;">Automatically Return Watched Episodes to HDD</span>
+                                </label>
+                                <p style="color: var(--text-secondary); font-size: 12px; margin-left: 28px; margin-top: 2px;">
+                                    Once an episode is watched, remove it from the SSD cache and ensure it is safely returned to the HDD storage array.
+                                </p>
+                            </div>
+
                             <div class="form-group">
                                 <label for="input-plex-url">Plex Server URL</label>
                                 <input type="text" id="input-plex-url" class="input-field" placeholder="http://localhost:32400 or http://192.168.1.100:32400">
@@ -644,6 +683,45 @@
                         </div>
                     </div>
 
+                    <!-- Fast Cache Pinned Folders Section -->
+                    <div class="content-section" style="margin-top: 0; margin-bottom: 24px;">
+                        <div class="section-header">
+                            <div>
+                                <h2>⚡ Fast Cache Pinned Folders (Instant Access &amp; Duplicated)</h2>
+                                <p class="section-desc">Folders pinned permanently to the SSD Cache for zero-spinup instant reads (like Music and Photos) with full duplication redundancy on the HDD array.</p>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button class="btn btn-outline" id="btn-sync-pinned-cache" style="font-size: 12px; padding: 6px 12px;">
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                    Sync Fast Cache Now
+                                </button>
+                                <button class="btn btn-primary" id="btn-open-pin-folder-modal" style="font-size: 12px; padding: 6px 12px;">
+                                    + Pin Folder
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Folder Pattern</th>
+                                        <th>HDD Array Duplication</th>
+                                        <th>SSD Fast Cache</th>
+                                        <th>Total Pool Data</th>
+                                        <th>Status</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pinned-cache-table-body">
+                                    <tr>
+                                        <td colspan="6" class="text-center" style="padding: 24px; color: var(--text-muted);">No folders currently pinned to Fast Cache. Click '+ Pin Folder' to add folders like /Music for instant playback with array duplication.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <!-- Pre-cached Media Files Table -->
                     <div class="content-section" style="margin-top: 0;">
                         <div class="section-header">
@@ -651,7 +729,10 @@
                                 <h2>Currently Pre-cached Media on SSD</h2>
                                 <p class="section-desc">Active media files kept on the SSD cache for zero-spinup instant streaming.</p>
                             </div>
-                            <span class="badge" id="plex-items-count-badge" style="background: rgba(56, 189, 248, 0.12); color: var(--accent-blue); padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 12px;">0 Items (0.0 GB)</span>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span class="badge" id="plex-evicted-count-badge" style="background: rgba(16, 185, 129, 0.12); color: var(--accent-green); padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 12px; display: none;">0 Returned to HDD</span>
+                                <span class="badge" id="plex-items-count-badge" style="background: rgba(56, 189, 248, 0.12); color: var(--accent-blue); padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 12px;">0 Items (0.0 GB)</span>
+                            </div>
                         </div>
 
                         <div class="table-container">
@@ -726,9 +807,51 @@
                     <label for="input-rule-desc">Description</label>
                     <input type="text" id="input-rule-desc" class="input-field" placeholder="Family photos redundant across disks">
                 </div>
+                <div class="form-group checkbox-group" style="margin-top: 14px; margin-bottom: 14px; background: rgba(245, 158, 11, 0.08); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25);">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="chk-rule-pin-cache" style="width: 18px; height: 18px; accent-color: #f59e0b; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 13.5px; color: #f59e0b;">⚡ Pin to Fast SSD Cache</span>
+                    </label>
+                    <p style="color: var(--text-secondary); font-size: 11.5px; margin-left: 28px; margin-top: 3px; line-height: 1.4;">
+                        Always keep this folder on the SSD cache for zero-spinup instant reads (e.g. /Music, /Photos) while maintaining the specified replica copies on the HDD storage array.
+                    </p>
+                </div>
                 <div class="modal-actions">
                     <button class="btn btn-outline" id="btn-cancel-rule">Cancel</button>
                     <button class="btn btn-primary" id="btn-save-rule">Save Rule</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Pin Folder to Fast Cache -->
+    <div class="modal-backdrop" id="modal-pin-folder">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>⚡ Pin Folder to Fast SSD Cache</h3>
+                <button class="btn-close" id="modal-close-pin-folder">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Files in this folder are cached on the high-speed SSD for instant playback/access, and duplicated across your array HDDs for data safety.</p>
+                <div class="form-group">
+                    <label for="input-pin-path">Folder Path Pattern</label>
+                    <input type="text" id="input-pin-path" class="input-field" placeholder="/Music or /Photos">
+                </div>
+                <div class="form-group">
+                    <label for="select-pin-replicas">HDD Array Duplication (Safety Copies)</label>
+                    <select id="select-pin-replicas" class="select-field">
+                        <option value="2" selected>2x Replicas - Two Distinct HDDs (Recommended)</option>
+                        <option value="3">3x Replicas - Three Distinct HDDs (High Resilience)</option>
+                        <option value="1">1x Copy - Single HDD (No Duplication)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="input-pin-desc">Description (Optional)</label>
+                    <input type="text" id="input-pin-desc" class="input-field" placeholder="Music library pinned for instant zero-latency playback">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-outline" id="btn-cancel-pin-folder">Cancel</button>
+                    <button class="btn btn-primary" id="btn-save-pin-folder" style="background: #f59e0b; border-color: #d97706;">⚡ Pin &amp; Sync to SSD</button>
                 </div>
             </div>
         </div>
@@ -795,9 +918,9 @@
         <div class="modal-card" style="max-width: 520px;">
             <div class="modal-header">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 24px;">🚀</span>
+                    <span style="font-size: 24px;" id="update-modal-icon">🚀</span>
                     <div>
-                        <h3 style="margin: 0; font-size: 16px;">Software Update Available</h3>
+                        <h3 style="margin: 0; font-size: 16px;" id="update-modal-title">Software Update Available</h3>
                         <p style="margin: 0; font-size: 12px; color: var(--accent-indigo);" id="update-modal-ver-text">DriveSpanner v0.0 is ready to install</p>
                     </div>
                 </div>

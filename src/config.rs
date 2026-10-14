@@ -44,6 +44,8 @@ pub struct FolderReplicationRule {
     pub replica_count: usize, // e.g. 2, 3
     pub enabled: bool,
     pub description: String,
+    #[serde(default)]
+    pub pin_to_cache: bool, // When true: always keep on fast SSD cache for instant access
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -166,6 +168,8 @@ pub struct PlexCacheConfig {
     pub enabled: bool,
     #[serde(default = "default_true")]
     pub precache_next_episode: bool,
+    #[serde(default = "default_true")]
+    pub evict_watched_episodes: bool,
     #[serde(default = "default_plex_url")]
     pub server_url: String,
     #[serde(default)]
@@ -193,6 +197,7 @@ impl Default for PlexCacheConfig {
         Self {
             enabled: false,
             precache_next_episode: true,
+            evict_watched_episodes: true,
             server_url: default_plex_url(),
             token: String::new(),
             sync_interval_minutes: default_plex_sync_minutes(),
@@ -218,6 +223,7 @@ impl Default for PoolConfig {
                         replica_count: 2,
                         enabled: true,
                         description: "Important documents duplicated across 2 disks".to_string(),
+                        pin_to_cache: false,
                     },
                     FolderReplicationRule {
                         id: Uuid::new_v4().to_string(),
@@ -225,6 +231,7 @@ impl Default for PoolConfig {
                         replica_count: 3,
                         enabled: true,
                         description: "Family photos replicated across 3 disks".to_string(),
+                        pin_to_cache: false,
                     },
                 ],
             },
@@ -365,7 +372,12 @@ impl PoolConfig {
         let path = path.as_ref();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(cfg) = serde_json::from_str::<PoolConfig>(&content) {
+                if let Ok(mut cfg) = serde_json::from_str::<PoolConfig>(&content) {
+                    // Auto-migrate legacy github_repo from poolforge to drivespanner
+                    if cfg.updates.github_repo.contains("poolforge") {
+                        cfg.updates.github_repo = "chrisurwin/drivespanner".to_string();
+                        let _ = cfg.save_to(path);
+                    }
                     return cfg;
                 }
             }

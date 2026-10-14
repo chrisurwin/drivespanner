@@ -64,7 +64,13 @@ async function checkAuthStatus() {
 
             // Set up polling intervals once authenticated
             if (!pollInterval) {
-                pollInterval = setInterval(() => fetchPoolData(false), 15000);
+                pollInterval = setInterval(() => {
+                    fetchPoolData(false);
+                    const activeTab = document.querySelector('.nav-item.active');
+                    if (activeTab && activeTab.getAttribute('data-tab') === 'settings') {
+                        fetchCacheStatus();
+                    }
+                }, 15000);
                 setInterval(fetchUpdates, 30 * 60 * 1000);
             }
         }
@@ -222,19 +228,52 @@ async function handleLogout() {
 }
 
 // Update Checker Functions
-async function fetchUpdates() {
-    try {
-        const res = await fetch('/api/updates').then(r => r.json());
-        latestUpdateData = res;
-        const badge = document.getElementById('update-badge');
-        const badgeVer = document.getElementById('update-badge-ver');
+function renderUpdateStatus(data) {
+    if (!data) return;
+    const badge = document.getElementById('update-badge');
+    const badgeVer = document.getElementById('update-badge-ver');
 
-        if (res.update_available && res.latest_version) {
-            badgeVer.textContent = `v${res.latest_version}`;
+    if (badge && badgeVer) {
+        if (data.update_available && data.latest_version) {
+            badgeVer.textContent = `v${data.latest_version}`;
             badge.style.display = 'inline-flex';
         } else {
             badge.style.display = 'none';
         }
+    }
+
+    // Update Service Control tab card
+    const srvInst = document.getElementById('service-installed-ver');
+    const srvLatest = document.getElementById('service-latest-ver');
+    const srvChecked = document.getElementById('service-last-checked-ver');
+
+    if (srvInst) srvInst.textContent = `v${data.current_version || '1.3.0'}`;
+    if (srvLatest) {
+        if (data.update_available && data.latest_version) {
+            srvLatest.innerHTML = `<span style="color: var(--accent-indigo); font-weight: 600;">v${data.latest_version} (Update Available)</span>`;
+        } else if (data.latest_version) {
+            srvLatest.innerHTML = `<span style="color: var(--accent-green); font-weight: 600;">v${data.latest_version} (Up to Date)</span>`;
+        } else if (data.error) {
+            srvLatest.innerHTML = `<span style="color: var(--accent-amber); font-size: 11px;" title="${data.error}">${data.error.substring(0, 32)}...</span>`;
+        } else {
+            srvLatest.textContent = 'Up to Date';
+        }
+    }
+    if (srvChecked) {
+        if (data.last_checked) {
+            const d = new Date(data.last_checked);
+            srvChecked.textContent = isNaN(d.getTime()) ? data.last_checked : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' (' + d.toLocaleDateString() + ')';
+        } else {
+            srvChecked.textContent = 'Never';
+        }
+    }
+}
+
+async function fetchUpdates() {
+    try {
+        const res = await apiFetch('/api/updates').then(r => r.json());
+        latestUpdateData = res;
+        renderUpdateStatus(res);
     } catch (e) {
         console.error('Failed to query updates:', e);
     }
@@ -243,17 +282,60 @@ async function fetchUpdates() {
 function openUpdateModal() {
     if (!latestUpdateData) return;
     const modal = document.getElementById('modal-update');
-    document.getElementById('update-modal-ver-text').textContent = `DriveSpanner v${latestUpdateData.latest_version} is available for installation`;
-    document.getElementById('update-installed-ver').textContent = `v${latestUpdateData.current_version}`;
-    document.getElementById('update-latest-ver').textContent = `v${latestUpdateData.latest_version}`;
-    document.getElementById('update-release-notes').textContent = latestUpdateData.release_notes || 'No release notes provided.';
-
+    const headerTitle = document.getElementById('update-modal-title');
+    const headerSub = document.getElementById('update-modal-ver-text');
+    const iconSpan = document.getElementById('update-modal-icon');
+    const installedEl = document.getElementById('update-installed-ver');
+    const latestEl = document.getElementById('update-latest-ver');
+    const notesEl = document.getElementById('update-release-notes');
     const dlBtn = document.getElementById('btn-download-update');
-    if (latestUpdateData.download_url) {
-        dlBtn.href = latestUpdateData.download_url;
-        dlBtn.style.display = 'inline-flex';
+
+    if (installedEl) installedEl.textContent = `v${latestUpdateData.current_version || '1.3.0'}`;
+    if (latestEl) latestEl.textContent = latestUpdateData.latest_version ? `v${latestUpdateData.latest_version}` : 'Up to Date';
+    if (notesEl) notesEl.textContent = latestUpdateData.release_notes || 'No release notes provided.';
+
+    const downloadUrl = latestUpdateData.msi_download_url || latestUpdateData.release_url;
+
+    if (latestUpdateData.update_available) {
+        if (iconSpan) iconSpan.textContent = '🚀';
+        if (headerTitle) headerTitle.textContent = 'Software Update Available';
+        if (headerSub) {
+            headerSub.textContent = `DriveSpanner v${latestUpdateData.latest_version} is ready to install`;
+            headerSub.style.color = 'var(--accent-indigo)';
+        }
+        if (dlBtn) {
+            dlBtn.href = downloadUrl || `https://github.com/chrisurwin/drivespanner/releases/latest`;
+            dlBtn.textContent = 'Download MSI Installer';
+            dlBtn.style.display = 'inline-flex';
+        }
+    } else if (latestUpdateData.error) {
+        if (iconSpan) iconSpan.textContent = '⚠️';
+        if (headerTitle) headerTitle.textContent = 'Update Check Notice';
+        if (headerSub) {
+            headerSub.textContent = latestUpdateData.error;
+            headerSub.style.color = 'var(--accent-amber)';
+        }
+        if (dlBtn) {
+            dlBtn.href = 'https://github.com/chrisurwin/drivespanner/releases';
+            dlBtn.textContent = 'View Releases on GitHub';
+            dlBtn.style.display = 'inline-flex';
+        }
     } else {
-        dlBtn.style.display = 'none';
+        if (iconSpan) iconSpan.textContent = '✨';
+        if (headerTitle) headerTitle.textContent = 'DriveSpanner is Up to Date';
+        if (headerSub) {
+            headerSub.textContent = `You are running the latest version (v${latestUpdateData.current_version})`;
+            headerSub.style.color = 'var(--accent-green)';
+        }
+        if (dlBtn) {
+            if (latestUpdateData.release_url) {
+                dlBtn.href = latestUpdateData.release_url;
+                dlBtn.textContent = 'View Release on GitHub';
+                dlBtn.style.display = 'inline-flex';
+            } else {
+                dlBtn.style.display = 'none';
+            }
+        }
     }
 
     modal.classList.add('show');
@@ -266,27 +348,34 @@ function closeUpdateModal() {
 
 async function checkUpdatesNow() {
     const checkBtn = document.getElementById('btn-check-updates-now');
-    const originalText = checkBtn.textContent;
-    checkBtn.textContent = 'Checking...';
-    checkBtn.disabled = true;
+    const serviceCheckBtn = document.getElementById('btn-service-check-updates');
+    const originalText = checkBtn ? checkBtn.textContent : 'Check Again';
+
+    if (checkBtn) {
+        checkBtn.textContent = 'Checking...';
+        checkBtn.disabled = true;
+    }
+    if (serviceCheckBtn) {
+        serviceCheckBtn.textContent = 'Checking...';
+        serviceCheckBtn.disabled = true;
+    }
 
     try {
-        const res = await fetch('/api/updates/check', { method: 'POST' }).then(r => r.json());
+        const res = await apiFetch('/api/updates/check', { method: 'POST' }).then(r => r.json());
         latestUpdateData = res;
+        renderUpdateStatus(res);
         openUpdateModal();
-        const badge = document.getElementById('update-badge');
-        const badgeVer = document.getElementById('update-badge-ver');
-        if (res.update_available && res.latest_version) {
-            badgeVer.textContent = `v${res.latest_version}`;
-            badge.style.display = 'inline-flex';
-        } else {
-            badge.style.display = 'none';
-        }
     } catch (e) {
         alert('Failed to check for updates: ' + e);
     } finally {
-        checkBtn.textContent = originalText;
-        checkBtn.disabled = false;
+        if (checkBtn) {
+            checkBtn.textContent = originalText;
+            checkBtn.disabled = false;
+        }
+        if (serviceCheckBtn) {
+            serviceCheckBtn.textContent = 'Check for Updates';
+            serviceCheckBtn.disabled = false;
+        }
     }
 }
 
@@ -492,6 +581,7 @@ function renderRules(rules, defaultReplicas) {
             <td class="folder-path-cell">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                 <span>${r.path_pattern}</span>
+                ${r.pin_to_cache ? `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; padding: 2px 7px; border-radius: 4px; font-size: 11px; margin-left: 8px; font-weight: 600;">⚡ Fast SSD Cache</span>` : ''}
             </td>
             <td>
                 <span class="replica-badge r${r.replica_count}">${r.replica_count}x Replicas</span>
@@ -728,6 +818,9 @@ function setupActions() {
     const btnSyncPlex = document.getElementById('btn-sync-plex-now');
     if (btnSyncPlex) btnSyncPlex.addEventListener('click', triggerPlexSync);
 
+    const btnSyncPinned = document.getElementById('btn-sync-pinned-cache');
+    if (btnSyncPinned) btnSyncPinned.addEventListener('click', triggerPinnedSync);
+
     const btnRunMover = document.getElementById('btn-run-mover');
     if (btnRunMover) btnRunMover.addEventListener('click', triggerCacheMover);
 
@@ -744,11 +837,15 @@ function setupActions() {
 function setupModals() {
     const modalAddDrive = document.getElementById('modal-add-drive');
     const modalAddRule = document.getElementById('modal-add-rule');
+    const modalPinFolder = document.getElementById('modal-pin-folder');
 
     document.getElementById('btn-open-add-drive').onclick = () => modalAddDrive.classList.add('show');
     document.getElementById('modal-close-add-drive').onclick = () => modalAddDrive.classList.remove('show');
 
-    document.getElementById('btn-open-add-rule').onclick = () => modalAddRule.classList.add('show');
+    document.getElementById('btn-open-add-rule').onclick = () => {
+        if (document.getElementById('chk-rule-pin-cache')) document.getElementById('chk-rule-pin-cache').checked = false;
+        modalAddRule.classList.add('show');
+    };
     document.getElementById('modal-close-add-rule').onclick = () => modalAddRule.classList.remove('show');
     document.getElementById('btn-cancel-rule').onclick = () => modalAddRule.classList.remove('show');
 
@@ -756,6 +853,7 @@ function setupModals() {
         const path = document.getElementById('input-rule-path').value.trim();
         const count = parseInt(document.getElementById('select-rule-count').value);
         const desc = document.getElementById('input-rule-desc').value.trim();
+        const pinToCache = document.getElementById('chk-rule-pin-cache') ? document.getElementById('chk-rule-pin-cache').checked : false;
 
         if (!path) {
             alert('Please specify a folder path (e.g. /Documents)');
@@ -769,17 +867,81 @@ function setupModals() {
                 body: JSON.stringify({
                     path_pattern: path,
                     replica_count: count,
-                    description: desc || null
+                    description: desc || null,
+                    pin_to_cache: pinToCache
                 })
             });
 
             modalAddRule.classList.remove('show');
             document.getElementById('input-rule-path').value = '';
+            if (document.getElementById('chk-rule-pin-cache')) document.getElementById('chk-rule-pin-cache').checked = false;
             fetchPoolData(true);
+            fetchCacheStatus();
         } catch (e) {
             console.error(e);
         }
     };
+
+    // Fast Cache Pin Folder Modal
+    const btnOpenPin = document.getElementById('btn-open-pin-folder-modal');
+    const btnClosePin = document.getElementById('modal-close-pin-folder');
+    const btnCancelPin = document.getElementById('btn-cancel-pin-folder');
+    const btnSavePin = document.getElementById('btn-save-pin-folder');
+
+    if (btnOpenPin && modalPinFolder) {
+        btnOpenPin.onclick = () => {
+            const pInput = document.getElementById('input-pin-path');
+            const dInput = document.getElementById('input-pin-desc');
+            if (pInput) pInput.value = '';
+            if (dInput) dInput.value = '';
+            modalPinFolder.classList.add('show');
+        };
+    }
+    if (btnClosePin && modalPinFolder) {
+        btnClosePin.onclick = () => modalPinFolder.classList.remove('show');
+    }
+    if (btnCancelPin && modalPinFolder) {
+        btnCancelPin.onclick = () => modalPinFolder.classList.remove('show');
+    }
+    if (btnSavePin && modalPinFolder) {
+        btnSavePin.onclick = async () => {
+            const path = document.getElementById('input-pin-path').value.trim();
+            const replicas = parseInt(document.getElementById('select-pin-replicas').value, 10);
+            const desc = document.getElementById('input-pin-desc').value.trim();
+
+            if (!path) {
+                alert('Please enter a folder path (e.g. /Music)');
+                return;
+            }
+
+            const origText = btnSavePin.textContent;
+            try {
+                btnSavePin.disabled = true;
+                btnSavePin.textContent = 'Pinning & Syncing...';
+
+                const res = await apiFetch('/api/cache/pinned', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path_pattern: path,
+                        replica_count: replicas,
+                        description: desc || null
+                    })
+                }).then(r => r.json());
+
+                modalPinFolder.classList.remove('show');
+                alert(res.message || 'Folder pinned to Fast SSD Cache and queued for sync!');
+                fetchCacheStatus();
+                fetchPoolData(true);
+            } catch (e) {
+                console.error('Failed to pin folder to fast cache:', e);
+                alert(e.message || 'Failed to pin folder to fast cache');
+            } finally {
+                btnSavePin.disabled = false;
+                btnSavePin.textContent = origText;
+            }
+        };
+    }
 }
 
 function openAddDriveModal() {
@@ -884,6 +1046,7 @@ function renderCacheStatus(data) {
         const cfg = data.config;
         const chkPlex = document.getElementById('chk-plex-enabled');
         const chkPrecacheNext = document.getElementById('chk-plex-precache-next');
+        const chkEvictWatched = document.getElementById('chk-plex-evict-watched');
         const inputUrl = document.getElementById('input-plex-url');
         const inputQuota = document.getElementById('input-plex-quota');
         const inputThresh = document.getElementById('input-mover-threshold');
@@ -891,10 +1054,48 @@ function renderCacheStatus(data) {
 
         if (chkPlex && !chkPlex.dataset.userEdited) chkPlex.checked = !!cfg.plex.enabled;
         if (chkPrecacheNext && !chkPrecacheNext.dataset.userEdited) chkPrecacheNext.checked = !!cfg.plex.precache_next_episode;
+        if (chkEvictWatched && !chkEvictWatched.dataset.userEdited) chkEvictWatched.checked = cfg.plex.evict_watched_episodes !== false;
         if (inputUrl && !inputUrl.dataset.userEdited) inputUrl.value = cfg.plex.server_url || 'http://localhost:32400';
         if (inputQuota && !inputQuota.dataset.userEdited) inputQuota.value = cfg.plex.max_cache_gb || 50;
         if (inputThresh && !inputThresh.dataset.userEdited) inputThresh.value = cfg.move_threshold_percent || 80;
         if (threshLbl) threshLbl.textContent = `${cfg.move_threshold_percent || 80}%`;
+    }
+
+    // 2.5. Render Fast Cache Pinned Folders
+    const pinnedTbody = document.getElementById('pinned-cache-table-body');
+    if (pinnedTbody) {
+        const pinnedList = data.pinned_folders || [];
+        if (pinnedList.length === 0) {
+            pinnedTbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 24px; color: var(--text-muted);">No folders currently pinned to Fast Cache. Click '+ Pin Folder' to add folders like /Music for instant playback with array duplication.</td></tr>`;
+        } else {
+            pinnedTbody.innerHTML = pinnedList.map(item => `
+                <tr>
+                    <td class="folder-path-cell" style="font-weight: 600; color: var(--text-primary);">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                        <span>${item.path_pattern}</span>
+                        ${item.description ? `<span style="font-size: 11px; font-weight: normal; color: var(--text-secondary); margin-left: 6px;">(${item.description})</span>` : ''}
+                    </td>
+                    <td>
+                        <span class="replica-badge r${item.replica_count}">${item.replica_count}x Replicas (HDDs)</span>
+                    </td>
+                    <td style="color: #f59e0b; font-weight: 600;">
+                        ${formatBytes(item.cached_bytes)} <span style="font-size: 11.5px; font-weight: normal; color: var(--text-secondary);">(${item.cached_files.toLocaleString()} files)</span>
+                    </td>
+                    <td style="color: var(--text-secondary);">
+                        ${formatBytes(item.total_bytes)} <span style="font-size: 11.5px; color: var(--text-muted);">(${item.total_files.toLocaleString()} files)</span>
+                    </td>
+                    <td>
+                        ${item.is_fully_cached 
+                            ? `<span class="badge" style="background: rgba(16, 185, 129, 0.12); color: var(--accent-green); padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600;">⚡ 100% Cached</span>`
+                            : `<span class="badge" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600;">Syncing (${item.cached_files}/${item.total_files})</span>`
+                        }
+                    </td>
+                    <td class="text-right">
+                        <button class="btn btn-outline" style="padding: 4px 8px; font-size: 11px;" onclick="unpinFolder('${item.id}')">Unpin</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
     }
 
     // 3. Render Plex Pre-caching Status & Items
@@ -924,11 +1125,37 @@ function renderCacheStatus(data) {
             }
         }
 
-        if (lastSyncLbl) lastSyncLbl.textContent = `Last sync: ${ps.last_sync_time || 'Never'}`;
+        if (lastSyncLbl) {
+            if (ps.last_sync_time) {
+                const clean = ps.last_sync_time.replace('-sync', '');
+                const ts = parseInt(clean, 10);
+                if (!isNaN(ts) && ts > 0) {
+                    const d = new Date(ts * 1000);
+                    lastSyncLbl.textContent = `Last sync: ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+                } else {
+                    lastSyncLbl.textContent = `Last sync: ${ps.last_sync_time}`;
+                }
+            } else {
+                lastSyncLbl.textContent = 'Last sync: Never';
+            }
+        }
 
         const itemsBadge = document.getElementById('plex-items-count-badge');
         if (itemsBadge) {
             itemsBadge.textContent = `${ps.items.length} Items (${formatBytes(ps.total_cached_bytes)})`;
+        }
+
+        const evictedBadge = document.getElementById('plex-evicted-count-badge');
+        if (evictedBadge) {
+            if (ps.evicted_items_count && ps.evicted_items_count > 0) {
+                evictedBadge.textContent = `${ps.evicted_items_count} Returned to HDD`;
+                evictedBadge.style.display = 'inline-block';
+                if (ps.last_evicted_summary) {
+                    evictedBadge.title = `Last returned: ${ps.last_evicted_summary}`;
+                }
+            } else {
+                evictedBadge.style.display = 'none';
+            }
         }
 
         const tbody = document.getElementById('plex-cached-table-body');
@@ -951,6 +1178,47 @@ function renderCacheStatus(data) {
     }
 }
 
+async function unpinFolder(ruleId) {
+    if (!confirm('Unpin this folder from Fast SSD Cache? Existing files on SSD will be migrated to the HDD array on the next mover cycle, but your HDD array replicas remain protected.')) {
+        return;
+    }
+    try {
+        const res = await apiFetch(`/api/cache/pinned/unpin/${ruleId}`, {
+            method: 'POST'
+        }).then(r => r.json());
+        alert(res.message || 'Folder unpinned from Fast SSD Cache.');
+        fetchCacheStatus();
+        fetchPoolData(true);
+    } catch (e) {
+        console.error('Failed to unpin folder:', e);
+        alert(e.message || 'Failed to unpin folder');
+    }
+}
+
+async function triggerPinnedSync() {
+    const btn = document.getElementById('btn-sync-pinned-cache');
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Syncing Fast Cache...';
+    }
+    try {
+        const res = await apiFetch('/api/cache/pinned/sync', {
+            method: 'POST'
+        }).then(r => r.json());
+        alert(res.message || 'Fast SSD Cache synchronization complete.');
+        fetchCacheStatus();
+    } catch (e) {
+        console.error('Failed to sync fast cache:', e);
+        alert(e.message || 'Failed to sync fast cache');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
+    }
+}
+
 async function saveCacheSettings() {
     const btn = document.getElementById('btn-save-cache-settings');
     const origText = btn ? btn.textContent : '';
@@ -962,6 +1230,7 @@ async function saveCacheSettings() {
     try {
         const enabled = document.getElementById('chk-plex-enabled').checked;
         const precacheNext = document.getElementById('chk-plex-precache-next').checked;
+        const evictWatched = document.getElementById('chk-plex-evict-watched').checked;
         const serverUrl = document.getElementById('input-plex-url').value.trim();
         const token = document.getElementById('input-plex-token').value.trim();
         const maxGb = parseFloat(document.getElementById('input-plex-quota').value) || 50;
@@ -975,6 +1244,7 @@ async function saveCacheSettings() {
                 move_threshold_percent: thresh,
                 plex_enabled: enabled,
                 plex_precache_next_episode: precacheNext,
+                plex_evict_watched_episodes: evictWatched,
                 plex_server_url: serverUrl,
                 plex_token: token ? token : null,
                 plex_max_cache_gb: maxGb
