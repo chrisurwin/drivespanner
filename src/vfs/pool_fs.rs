@@ -17,6 +17,10 @@ const EIO: c_int = 5;
 const EACCES: c_int = 13;
 const ENOSPC: c_int = 28;
 
+// Windows / WinFsp UID and GID for Everyone (S-1-1-0)
+pub const EVERYONE_UID: u32 = 65792;
+pub const EVERYONE_GID: u32 = 65792;
+
 pub struct OpenFileHandle {
     pub file: File,
     pub rel_path: String,
@@ -118,6 +122,8 @@ pub unsafe extern "C" fn fs_getattr(path_ptr: *const c_char, stbuf: *mut FuseSta
         let mut st = FuseStat::default();
         st.st_ino = path_to_inode("/");
         st.st_mode = 0o040777; // S_IFDIR | 0777
+        st.st_uid = EVERYONE_UID;
+        st.st_gid = EVERYONE_GID;
         st.st_nlink = 2;
         *stbuf = st;
         return 0;
@@ -142,6 +148,8 @@ pub unsafe extern "C" fn fs_getattr(path_ptr: *const c_char, stbuf: *mut FuseSta
                                 let mut st = FuseStat::default();
                                 st.st_ino = path_to_inode(&rel_path);
                                 st.st_mode = 0o040777;
+                                st.st_uid = EVERYONE_UID;
+                                st.st_gid = EVERYONE_GID;
                                 st.st_nlink = 2;
                                 *stbuf = st;
                                 return 0;
@@ -151,7 +159,9 @@ pub unsafe extern "C" fn fs_getattr(path_ptr: *const c_char, stbuf: *mut FuseSta
                             if entry.instant.elapsed().as_secs() < 60 {
                                 let mut st = FuseStat::default();
                                 st.st_ino = path_to_inode(&rel_path);
-                                st.st_mode = 0o100666;
+                                st.st_mode = 0o100777; // S_IFREG | 0777
+                                st.st_uid = EVERYONE_UID;
+                                st.st_gid = EVERYONE_GID;
                                 st.st_nlink = 1;
                                 st.st_size = *size;
                                 st.st_blksize = 4096;
@@ -239,6 +249,8 @@ pub unsafe extern "C" fn fs_getattr(path_ptr: *const c_char, stbuf: *mut FuseSta
         let mut st = FuseStat::default();
         st.st_ino = path_to_inode(&rel_path);
         st.st_mode = 0o040777;
+        st.st_uid = EVERYONE_UID;
+        st.st_gid = EVERYONE_GID;
         st.st_nlink = 2;
         *stbuf = st;
         return 0;
@@ -271,7 +283,9 @@ pub unsafe extern "C" fn fs_getattr(path_ptr: *const c_char, stbuf: *mut FuseSta
 
             let mut st = FuseStat::default();
             st.st_ino = path_to_inode(&rel_path);
-            st.st_mode = 0o100666; // S_IFREG | 0666
+            st.st_mode = 0o100777; // S_IFREG | 0777
+            st.st_uid = EVERYONE_UID;
+            st.st_gid = EVERYONE_GID;
             st.st_nlink = 1;
             st.st_size = meta.len() as i64;
             st.st_blksize = 4096;
@@ -322,9 +336,13 @@ pub unsafe extern "C" fn fs_readdir(
     let mut dot_st = FuseStat::default();
     dot_st.st_ino = path_to_inode(&format!("{}/.", rel_path));
     dot_st.st_mode = 0o040777;
+    dot_st.st_uid = EVERYONE_UID;
+    dot_st.st_gid = EVERYONE_GID;
     let mut dotdot_st = FuseStat::default();
     dotdot_st.st_ino = path_to_inode(&format!("{}/..", rel_path));
     dotdot_st.st_mode = 0o040777;
+    dotdot_st.st_uid = EVERYONE_UID;
+    dotdot_st.st_gid = EVERYONE_GID;
     filler(buf, dot.as_ptr(), &dot_st, 0);
     filler(buf, dotdot.as_ptr(), &dotdot_st, 0);
 
@@ -406,7 +424,9 @@ pub unsafe extern "C" fn fs_readdir(
         if seen_names_lower.insert(lower) {
             let mut st = FuseStat::default();
             st.st_ino = path_to_inode(&child_rel);
-            st.st_mode = if item.is_dir { 0o040777 } else { 0o100666 };
+            st.st_mode = if item.is_dir { 0o040777 } else { 0o100777 };
+            st.st_uid = EVERYONE_UID;
+            st.st_gid = EVERYONE_GID;
             st.st_size = item.file_size;
             if let Ok(c_name) = CString::new(item.name_str) {
                 filler(buf, c_name.as_ptr(), &st, 0);
@@ -491,12 +511,36 @@ pub unsafe extern "C" fn fs_open(path_ptr: *const c_char, fi: *mut FuseFileInfo)
         }
     }
 
+    // If file doesn't exist yet but O_CREAT flag is present, delegate to fs_create!
+    if target_file.is_none() && !fi.is_null() && ((*fi).flags & libc::O_CREAT != 0) {
+        return fs_create(path_ptr, 0o777, fi);
+    }
+
     match target_file {
         Some((phys_path, is_write)) => {
+            // Remove NTFS read-only attribute if file was marked read-only on disk
+            if is_write {
+                if let Ok(meta) = std::fs::metadata(&phys_path) {
+                    let mut perms = meta.permissions();
+                    if perms.readonly() {
+                        perms.set_readonly(false);
+                        let _ = std::fs::set_permissions(&phys_path, perms);
+                    }
+                }
+            }
+
             let mut opts = OpenOptions::new();
             opts.read(true);
             if is_write {
                 opts.write(true);
+                let is_trunc = !fi.is_null() && ((*fi).flags & libc::O_TRUNC != 0);
+                if is_trunc {
+                    opts.truncate(true);
+                }
+                let is_append = !fi.is_null() && ((*fi).flags & libc::O_APPEND != 0);
+                if is_append {
+                    opts.append(true);
+                }
             }
             match opts.open(&phys_path) {
                 Ok(file) => {
@@ -855,7 +899,9 @@ pub unsafe extern "C" fn fs_fgetattr(
 
         let mut st = FuseStat::default();
         st.st_ino = path_to_inode(&rel_path);
-        st.st_mode = 0o100666;
+        st.st_mode = 0o100777; // S_IFREG | 0777
+        st.st_uid = EVERYONE_UID;
+        st.st_gid = EVERYONE_GID;
         st.st_nlink = 1;
         st.st_size = meta.len() as i64;
         st.st_blksize = 4096;
@@ -869,6 +915,114 @@ pub unsafe extern "C" fn fs_fgetattr(
     } else {
         -EIO
     }
+}
+
+pub unsafe extern "C" fn fs_chmod(_path_ptr: *const c_char, _mode: u32) -> c_int {
+    // POSIX chmod compatibility: return success so Linux containers don't fail
+    0
+}
+
+pub unsafe extern "C" fn fs_chown(_path_ptr: *const c_char, _uid: u32, _gid: u32) -> c_int {
+    // POSIX chown compatibility: return success so Linux containers don't fail
+    0
+}
+
+pub unsafe extern "C" fn fs_truncate(path_ptr: *const c_char, size: i64) -> c_int {
+    let rel_path = c_path_to_rel(path_ptr);
+    invalidate_path_cache(&rel_path);
+    let pool = match get_pool() {
+        Some(p) => p,
+        None => return -EIO,
+    };
+
+    let disks = pool.disks.read().unwrap();
+    let mut truncated_any = false;
+
+    for disk in disks.iter() {
+        let phys = disk.to_physical_path(&rel_path);
+        if phys.is_file() {
+            if let Ok(file) = OpenOptions::new().write(true).open(&phys) {
+                if file.set_len(size as u64).is_ok() {
+                    truncated_any = true;
+                }
+            }
+        }
+    }
+
+    if truncated_any {
+        if let Some(rt) = TOKIO_HANDLE.lock().unwrap().as_ref() {
+            let rep = pool.replicator.clone();
+            rt.spawn(async move {
+                rep.queue_replication(rel_path).await;
+            });
+        }
+        0
+    } else {
+        -ENOENT
+    }
+}
+
+pub unsafe extern "C" fn fs_ftruncate(
+    _path_ptr: *const c_char,
+    off: i64,
+    fi: *mut FuseFileInfo,
+) -> c_int {
+    if fi.is_null() {
+        return -EIO;
+    }
+    let fh = (*fi).fh;
+    let mut lock = GLOBAL_HANDLES.lock().unwrap();
+    if let Some(handle) = lock.as_mut().and_then(|m| m.get_mut(&fh)) {
+        match handle.file.set_len(off as u64) {
+            Ok(_) => {
+                handle.is_write = true;
+                invalidate_path_cache(&handle.rel_path);
+                0
+            }
+            Err(e) => {
+                error!("fs_ftruncate failed for '{}': {}", handle.rel_path, e);
+                -EIO
+            }
+        }
+    } else {
+        -EIO
+    }
+}
+
+pub unsafe extern "C" fn fs_utimens(
+    _path_ptr: *const c_char,
+    _tv: *const FuseTimespec,
+) -> c_int {
+    // POSIX utimens compatibility: return success for timestamp updates
+    0
+}
+
+pub unsafe extern "C" fn fs_flush(_path_ptr: *const c_char, fi: *mut FuseFileInfo) -> c_int {
+    if fi.is_null() {
+        return 0;
+    }
+    let fh = (*fi).fh;
+    let mut lock = GLOBAL_HANDLES.lock().unwrap();
+    if let Some(handle) = lock.as_mut().and_then(|m| m.get_mut(&fh)) {
+        let _ = handle.file.flush();
+    }
+    0
+}
+
+pub unsafe extern "C" fn fs_fsync(
+    _path_ptr: *const c_char,
+    _datasync: c_int,
+    fi: *mut FuseFileInfo,
+) -> c_int {
+    if fi.is_null() {
+        return 0;
+    }
+    let fh = (*fi).fh;
+    let mut lock = GLOBAL_HANDLES.lock().unwrap();
+    if let Some(handle) = lock.as_mut().and_then(|m| m.get_mut(&fh)) {
+        let _ = handle.file.sync_data();
+    }
+    0
 }
 
 pub unsafe extern "C" fn fs_access(path_ptr: *const c_char, _mask: c_int) -> c_int {
@@ -908,5 +1062,54 @@ pub fn create_fuse_operations() -> FuseOperations {
     ops.rmdir = Some(fs_rmdir);
     ops.rename = Some(fs_rename);
     ops.statfs = Some(fs_statfs);
+    ops.chmod = Some(fs_chmod);
+    ops.chown = Some(fs_chown);
+    ops.truncate = Some(fs_truncate);
+    ops.ftruncate = Some(fs_ftruncate);
+    ops.utimens = Some(fs_utimens);
+    ops.flush = Some(fs_flush);
+    ops.fsync = Some(fs_fsync);
     ops
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fuse_operations_wiring() {
+        let ops = create_fuse_operations();
+        assert!(ops.init.is_some());
+        assert!(ops.getattr.is_some());
+        assert!(ops.fgetattr.is_some());
+        assert!(ops.access.is_some());
+        assert!(ops.readdir.is_some());
+        assert!(ops.open.is_some());
+        assert!(ops.create.is_some());
+        assert!(ops.read.is_some());
+        assert!(ops.write.is_some());
+        assert!(ops.release.is_some());
+        assert!(ops.unlink.is_some());
+        assert!(ops.mkdir.is_some());
+        assert!(ops.rmdir.is_some());
+        assert!(ops.rename.is_some());
+        assert!(ops.statfs.is_some());
+        assert!(ops.chmod.is_some());
+        assert!(ops.chown.is_some());
+        assert!(ops.truncate.is_some());
+        assert!(ops.ftruncate.is_some());
+        assert!(ops.utimens.is_some());
+        assert!(ops.flush.is_some());
+        assert!(ops.fsync.is_some());
+    }
+
+    #[test]
+    fn test_posix_compat_callbacks() {
+        let dummy = CString::new("/test/path").unwrap();
+        assert_eq!(unsafe { fs_chmod(dummy.as_ptr(), 0o777) }, 0);
+        assert_eq!(unsafe { fs_chown(dummy.as_ptr(), 1000, 1000) }, 0);
+        assert_eq!(unsafe { fs_utimens(dummy.as_ptr(), std::ptr::null()) }, 0);
+        assert_eq!(unsafe { fs_flush(dummy.as_ptr(), std::ptr::null_mut()) }, 0);
+        assert_eq!(unsafe { fs_fsync(dummy.as_ptr(), 0, std::ptr::null_mut()) }, 0);
+    }
 }

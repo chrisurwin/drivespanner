@@ -129,7 +129,7 @@ impl PoolMounter {
 
         init_fs_globals(pool_arc, Some(rt.handle().clone()));
 
-        let opt_str = "FileSystemName=DriveSpanner,volname=DriveSpanner,FileInfoTimeout=5000,DirInfoTimeout=5000,VolumeInfoTimeout=10000,ThreadCount=16".to_string();
+        let opt_str = "FileSystemName=DriveSpanner,volname=DriveSpanner,FileInfoTimeout=5000,DirInfoTimeout=5000,VolumeInfoTimeout=10000,ThreadCount=16,uid=65792,gid=65792,umask=0".to_string();
         let args_strings = vec![
             "drivespanner".to_string(),
             target_mount.clone(),

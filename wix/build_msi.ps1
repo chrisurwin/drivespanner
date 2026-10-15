@@ -1,6 +1,6 @@
 # DriveSpanner WiX MSI Build Automation Script
 param (
-    [string]$Version = "1.4.0",
+    [string]$Version = "1.4.1",
     [string]$SourceDir = "",
     [string]$OutputDir = "target\installer"
 )
